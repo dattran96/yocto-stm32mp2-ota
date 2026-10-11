@@ -16,6 +16,7 @@ distro configuration (`mydistro`, based on poky with systemd), and contains:
 | `recipes-bsp/ab-bootscript/` | A U-Boot boot script that selects the A or B root filesystem for RAUC, with boot attempt counters and fallback |
 | `recipes-bsp/u-boot/` | `fw_env.config` so that `fw_printenv` / `fw_setenv` (and RAUC) can access the U-Boot environment from Linux |
 | `recipes-core/rauc/` | `rauc-conf.bbappend` with the board's RAUC `system.conf` (two rootfs slots, U-Boot backend) and the public CA certificate |
+| `recipes-core/bundles/my-bundle.bb` | A signed RAUC update bundle (`verity` format) with the rootfs of `my-image` |
 | `recipes-kernel/mymod/` | An out-of-tree kernel module (`inherit module`) with a parameter, loaded automatically at boot |
 | `recipes-kernel/linux/` | `.bbappend`s for `linux-yocto` (QEMU) and `linux-stm32mp` (ST board) that add the same kernel config fragment (exFAT as a module), plus the kernel options RAUC needs for the ST kernel |
 | `sdk-example/` | A program cross-compiled outside BitBake with the SDK generated from `my-image` |
@@ -72,7 +73,10 @@ bitbake-layers add-layer ../../meta-openembedded/meta-oe ../../meta-openembedded
 #   DISTRO = "mydistro"
 #   MACHINE_FEATURES:append = " nogpu"   (ST GPU EULA not accepted, see step 11)
 #   ST_EXTLINUX_PACKAGE = "ab-bootscript" (A/B boot script instead of extlinux.conf, see step 12)
+#   RAUC_KEY_FILE / RAUC_CERT_FILE = your bundle signing key and certificate (not in this repo)
 bitbake my-image
+
+bitbake my-bundle                       # signed RAUC update bundle (.raucb)
 
 # board in USB boot mode, then:
 cd tmp/deploy/images/stm32mp25-disco
@@ -418,6 +422,27 @@ to learn. The concepts (A/B slots, boot counting, rollback, signed bundles) are 
 - `Failed to load status file .../slot.raucs` is expected: without a central status file
   (`data-directory`), RAUC keeps a status file inside each slot, and freshly flashed slots have
   none until RAUC installs into them.
+
+**12d: Building a bundle and installing an update**
+- `my-bundle.bb` uses `inherit bundle` with `RAUC_SLOT_rootfs = "my-image"`. The bundle class
+  would take `my-image-<machine>.rootfs.ext4`, but that file still contains `/boot`; the slots hold
+  ST's split rootfs, so `RAUC_SLOT_rootfs[file]` selects `...splitted-rootfs.ext4`.
+  `compatible` matches `system.conf`, the version comes from `DISTRO_VERSION`, and the format is
+  `verity`. The signing key and certificate are set in `local.conf`.
+- Checked the bundle on the build host before touching the board, with the host version of RAUC
+  that BitBake already built: `bitbake rauc-native -c addto_recipe_sysroot`, then
+  `oe-run-native rauc-native rauc info --keyring=<ca.cert.pem> <bundle>`. It shows the signature
+  check and the certificate chain: signing certificate → issued by the CA → CA trusted because it
+  is in the keyring. The bundle carries the signing certificate, so the device only needs the CA
+  certificate, and new signing keys from the same CA work without updating the devices.
+- Raised `DISTRO_VERSION` to 1.1 as a visible change, copied the bundle to a USB stick and ran
+  `rauc install` on the board running 1.0 from slot A. RAUC wrote the image into the inactive slot
+  B, stored a status file in it, and set `BOOT_ORDER=B A`. After the reboot U-Boot printed
+  `Booting slot B (rootfs2), attempts left: A=3 B=2`, `/etc/os-release` showed `1.1`, and
+  `rauc-mark-good` reset B's counter.
+- In `rauc status`, `x` marks the **activated** slot (first in `BOOT_ORDER`), not the running one;
+  `booted` / `inactive` in parentheses shows which slot is running. Right after an install the
+  running slot is `o` and the new slot is `x`.
 
 ### Other things learned along the way
 
