@@ -15,6 +15,7 @@ distro configuration (`mydistro`, based on poky with systemd), and contains:
 | `recipes-sysmon/sysmon/` | A CMake project (`inherit cmake`) packaged as a daemon that starts at boot, with both a SysVinit script and a systemd unit |
 | `recipes-bsp/ab-bootscript/` | A U-Boot boot script that selects the A or B root filesystem for RAUC, with boot attempt counters and fallback |
 | `recipes-bsp/u-boot/` | `fw_env.config` so that `fw_printenv` / `fw_setenv` (and RAUC) can access the U-Boot environment from Linux |
+| `recipes-core/rauc/` | `rauc-conf.bbappend` with the board's RAUC `system.conf` (two rootfs slots, U-Boot backend) and the public CA certificate |
 | `recipes-kernel/mymod/` | An out-of-tree kernel module (`inherit module`) with a parameter, loaded automatically at boot |
 | `recipes-kernel/linux/` | `.bbappend`s for `linux-yocto` (QEMU) and `linux-stm32mp` (ST board) that add the same kernel config fragment (exFAT as a module), plus the kernel options RAUC needs for the ST kernel |
 | `sdk-example/` | A program cross-compiled outside BitBake with the SDK generated from `my-image` |
@@ -397,6 +398,26 @@ to learn. The concepts (A/B slots, boot counting, rollback, signed bundles) are 
 - Hardware lesson: STM32CubeProgrammer did not find the board because the USB-C cable on the
   flashing port was charge-only (`lsusb` showed only the ST-LINK, no DFU device).
 - Not done yet: the kernel is still in the shared `bootfs`, so updates cannot change it.
+
+**12c: RAUC configuration and signing keys**
+- Created a development CA and signing key with `meta-rauc/scripts/openssl-ca.sh`. The device only
+  installs bundles signed by a key that chains up to the CA certificate in its keyring.
+- **The private key is not in this repository.** It lives in `~/yocto-keys/` on the build machine
+  and is passed to the build from `local.conf`; only the public `ca.cert.pem` is in the layer, and
+  `.gitignore` excludes `*.key.pem` as a safety net. Anyone with the signing key could create
+  updates that the devices accept.
+- `system.conf`: `compatible` (bundles for other products are rejected), `bootloader=uboot`,
+  `bundle-formats=-plain` (only `verity` bundles), and two slots `rootfs.0` / `rootfs.1` with
+  `bootname` A / B, addressed by the stable `by-path` links. `rauc-conf.bbappend` only needs
+  `FILESEXTRAPATHS:prepend`, because `rauc-conf.bb` already fetches `system.conf` and
+  `ca.cert.pem`, and the first match in the search path wins; the build warnings about the
+  example files disappeared.
+- On the board, `rauc status` shows `Booted from: rootfs.0 (A)`, `Activated: rootfs.0 (A)` and
+  both slots `good`. At boot, `rauc-mark-good` ran (`Marked slot rootfs.0 as good`), so the
+  attempt counter is now reset automatically instead of with `fw_setenv`.
+- `Failed to load status file .../slot.raucs` is expected: without a central status file
+  (`data-directory`), RAUC keeps a status file inside each slot, and freshly flashed slots have
+  none until RAUC installs into them.
 
 ### Other things learned along the way
 

@@ -1,0 +1,3 @@
+# Never commit signing keys (RAUC bundle keys live outside the repo)
+*.key.pem
+*.key
