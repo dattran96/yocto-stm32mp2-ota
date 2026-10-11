@@ -7,14 +7,14 @@ distro configuration (`mydistro`, based on poky with systemd), and contains:
 
 | Path | What it shows |
 |---|---|
-| `conf/distro/mydistro.conf` | My own distro: inherits poky and sets the distro policy (systemd as init manager) |
+| `conf/distro/mydistro.conf` | My own distro: inherits poky and sets the distro policy (systemd as init manager, RAUC enabled) |
 | `recipes-hello/hello/` | A recipe written by hand for a small C program (cross-compiled with `${CC}`) |
 | `recipes-devtools/file/` | A `.bbappend` that patches an existing poky recipe (`file`), created with `devtool modify` / `devtool finish` |
 | `recipes-microsocks/microsocks/` | A recipe for a third-party project from GitHub, created with `devtool add`, plus a local patch |
 | `recipes-core/images/my-image.bb` | A custom image recipe (`inherit core-image`) with an SSH server |
 | `recipes-sysmon/sysmon/` | A CMake project (`inherit cmake`) packaged as a daemon that starts at boot, with both a SysVinit script and a systemd unit |
 | `recipes-kernel/mymod/` | An out-of-tree kernel module (`inherit module`) with a parameter, loaded automatically at boot |
-| `recipes-kernel/linux/` | `.bbappend`s for `linux-yocto` (QEMU) and `linux-stm32mp` (ST board) that add the same kernel config fragment (exFAT as a module) |
+| `recipes-kernel/linux/` | `.bbappend`s for `linux-yocto` (QEMU) and `linux-stm32mp` (ST board) that add the same kernel config fragment (exFAT as a module), plus the kernel options RAUC needs for the ST kernel |
 | `sdk-example/` | A program cross-compiled outside BitBake with the SDK generated from `my-image` |
 
 The [learning log](#learning-log) below records what I did at each step, the
@@ -329,6 +329,35 @@ curl --socks5 192.168.7.2:1080 http://192.168.7.1:8000/   # through the proxy on
   `hello` and the patched `file --version` work, `sysmon` runs under systemd, `mymod` is loaded at
   boot with `whom=Dat`, `modprobe exfat` works, and neither `etnaviv` nor `galcore` is loaded.
 
+### Step 12: OTA updates with RAUC (in progress)
+
+Goal: A/B updates of the root filesystem on the STM32MP257F-DK. The board runs from one rootfs
+slot while RAUC writes a signed update bundle into the other one; U-Boot then boots the new slot
+and falls back to the old one if the new system does not boot.
+
+Chose RAUC over Mender: Mender also builds the SD card image itself and patches U-Boot
+automatically, which conflicts with ST's flash layout tooling, and hides the A/B mechanics I want
+to learn. The concepts (A/B slots, boot counting, rollback, signed bundles) are the same.
+
+**12a: Adding meta-rauc**
+- Cloned `meta-rauc` (branch scarthgap, RAUC 1.15.2) and added it to both builds.
+- Read the layer's README first. It asks for three things: `rauc` in `DISTRO_FEATURES` (added to
+  `mydistro.conf`, since it is a distro policy; the layer's sanity check warns if it is missing),
+  a `rauc-conf.bbappend` with the board's `system.conf` and keyring (next steps), and `rauc` in
+  `IMAGE_INSTALL`, because `my-image` uses `packagegroup-core-boot` instead of `packagegroup-base`.
+- **Same trap as in step 11:** `meta-rauc` ships a kernel fragment (`rauc.cfg`), but only for
+  `linux-yocto`. Comparing it with the ST kernel's `.config` showed `CONFIG_BLK_DEV_DM=m` and
+  `# CONFIG_DM_VERITY is not set`. RAUC's `verity` bundle format is a SquashFS image that is
+  checked by dm-verity while it is read, so installing a bundle would have failed on the board.
+  Added my own `rauc.cfg` to `linux-stm32mp_%.bbappend`, only when the distro enables RAUC
+  (`bb.utils.contains('DISTRO_FEATURES', 'rauc', ...)`), like `meta-rauc` does for `linux-yocto`.
+- Result: `CONFIG_BLK_DEV_DM=y` and `CONFIG_DM_VERITY=y`, and the image contains `rauc`,
+  `rauc-conf`, `rauc-service` and `rauc-mark-good`. The build warns that `system.conf` and
+  `ca.cert.pem` are still the layer's examples.
+- **Observation:** adding a `DISTRO_FEATURES` entry rebuilt only about 400 tasks, unlike the
+  systemd switch. A task's signature only changes if the task actually uses the variable, and few
+  recipes check for `rauc`; switching to systemd changed many more variables and recipes.
+
 ### Other things learned along the way
 
 - `Ctrl-Z` pauses a command instead of cancelling it. A paused `devtool build` kept
@@ -345,3 +374,4 @@ curl --socks5 192.168.7.2:1080 http://192.168.7.1:8000/   # through the proxy on
 - [x] Kernel: an out-of-tree kernel module recipe, loaded at boot
 - [x] Create my own distro config instead of using `poky`
 - [x] Build for real hardware (STM32MP257F-DK with `meta-st-stm32mp`)
+- [ ] OTA updates with RAUC: A/B rootfs, U-Boot boot selection, signed bundles, rollback

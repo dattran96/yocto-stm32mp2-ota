@@ -13,6 +13,7 @@ IMAGE_INSTALL = " \
     sysmon \
     kernel-module-exfat \
     mymod \
+    rauc \
 "
 
 IMAGE_FEATURES += "ssh-server-dropbear"

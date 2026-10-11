@@ -5,3 +5,6 @@ FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
 # KERNEL_CONFIG_FRAGMENTS.
 SRC_URI += "file://exfat.cfg"
 KERNEL_CONFIG_FRAGMENTS:append = " ${WORKDIR}/exfat.cfg"
+
+SRC_URI += "file://rauc.cfg"
+KERNEL_CONFIG_FRAGMENTS:append = " ${@bb.utils.contains('DISTRO_FEATURES', 'rauc', '${WORKDIR}/rauc.cfg', '', d)}"
