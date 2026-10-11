@@ -1,9 +1,26 @@
-# meta-mylayer
+# yocto-stm32mp2-ota
 
-A Yocto Project layer I built while learning embedded Linux with Yocto.
-It targets **Yocto 5.0 "Scarthgap" (LTS)**, runs on the **`qemuarm64`** machine and on real
-hardware (**STM32MP257F-DK** board with ST's `meta-st-stm32mp` BSP), uses its own
-distro configuration (`mydistro`, based on poky with systemd), and contains:
+Embedded Linux with Yocto on the **STM32MP257F-DK** board: my own distro and image, board
+bring-up with ST's BSP, and **A/B over-the-air updates with RAUC**, tested on real hardware,
+including automatic rollback.
+
+**Highlights**
+- **A/B OTA updates with RAUC:** two rootfs slots in ST's flash layout, a U-Boot boot script with
+  attempt counters and fallback, signed `verity` bundles, and a rollback test that interrupts the
+  first boots of an update ([step 12](#step-12-ota-updates-with-rauc-in-progress)).
+- **Board bring-up and BSP debugging:** traced an OP-TEE panic in the secure firmware back to a
+  GPU driver that ST's recipes only blacklist in some configurations; adapted kernel config
+  fragments to ST's kernel recipe ([step 11](#step-11-building-for-real-hardware-stm32mp257f-dk)).
+- **U-Boot and Linux working together:** manual boot from the U-Boot prompt, the redundant U-Boot
+  environment found with `hexdump`, and stable device paths after the SD card's `/dev/mmcblkN`
+  name changed between boots.
+- **Yocto fundamentals:** own layer, distro and image; recipes for C, CMake and third-party
+  projects; `devtool` workflow; kernel configuration fragments and an out-of-tree kernel module;
+  SDK; systemd services.
+
+Built on **Yocto 5.0 "Scarthgap" (LTS)**; also runs on the **`qemuarm64`** machine. The layer is
+called `meta-mylayer` and uses its own distro configuration (`mydistro`, based on poky with
+systemd). It contains:
 
 | Path | What it shows |
 |---|---|
@@ -31,7 +48,7 @@ Requirements: a Linux host set up for Yocto builds
 
 ```bash
 git clone -b scarthgap https://git.yoctoproject.org/poky
-git clone https://github.com/dattran96/yocto-optimized-image.git meta-mylayer
+git clone https://github.com/dattran96/yocto-stm32mp2-ota.git meta-mylayer
 
 cd poky
 source oe-init-build-env build
