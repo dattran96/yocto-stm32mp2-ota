@@ -472,5 +472,28 @@ to learn. The concepts (A/B slots, boot counting, rollback, signed bundles) are 
 - [x] Create my own distro config instead of using `poky`
 - [x] Build for real hardware (STM32MP257F-DK with `meta-st-stm32mp`)
 - [x] OTA updates with RAUC: A/B rootfs, U-Boot boot selection, signed bundles, rollback
-- [ ] OTA: kernel and device tree inside each rootfs slot, so updates can change the kernel
-- [ ] OTA: persistent data partition and a central RAUC status file (`data-directory`)
+
+Planned, in this order:
+
+1. **OTA stage 2 and verified kernel boot**
+   - [ ] Kernel and device tree as a FIT image inside each rootfs slot, so updates can change the
+         kernel; `boot.scr` loads it from the selected slot
+   - [ ] Signed FIT image: U-Boot verifies kernel and device tree before booting
+2. **Persistent data**
+   - [ ] Mount `userfs` as a data partition that survives updates
+   - [ ] Central RAUC status file (`data-directory`) on that partition
+3. **Device tree and a driver** (I2C sensor, e.g. BME280, on the GPIO expansion header)
+   - [ ] Find the I2C controller and pins in the board schematics
+   - [ ] Device tree node for the sensor in a `linux-stm32mp` bbappend; test with the existing
+         `bmp280` IIO driver and `i2cdetect`
+   - [ ] Own I2C driver (`probe()`, `regmap`, sysfs/IIO interface) as an out-of-tree module
+   - [ ] Debug the bus with a logic analyzer (wrong address, missing pull-ups)
+4. **Secure boot chain**
+   - [ ] Sign TF-A and FIP with ST's tools (without closing the OTP fuses, which is irreversible)
+   - [ ] Document the chain of trust: ROM → TF-A → FIP → signed FIT → signed RAUC bundles
+   - [ ] Optional: read-only rootfs with dm-verity
+5. **Connectivity and comparison**
+   - [ ] WiFi: chip firmware, `wpa_supplicant`, systemd-networkd config, credentials kept out of
+         the repository
+   - [ ] Optional: install updates over HTTPS (RAUC streaming or hawkBit)
+   - [ ] Optional: Mender on QEMU, compared with RAUC
