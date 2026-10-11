@@ -13,6 +13,8 @@ distro configuration (`mydistro`, based on poky with systemd), and contains:
 | `recipes-microsocks/microsocks/` | A recipe for a third-party project from GitHub, created with `devtool add`, plus a local patch |
 | `recipes-core/images/my-image.bb` | A custom image recipe (`inherit core-image`) with an SSH server |
 | `recipes-sysmon/sysmon/` | A CMake project (`inherit cmake`) packaged as a daemon that starts at boot, with both a SysVinit script and a systemd unit |
+| `recipes-bsp/ab-bootscript/` | A U-Boot boot script that selects the A or B root filesystem for RAUC, with boot attempt counters and fallback |
+| `recipes-bsp/u-boot/` | `fw_env.config` so that `fw_printenv` / `fw_setenv` (and RAUC) can access the U-Boot environment from Linux |
 | `recipes-kernel/mymod/` | An out-of-tree kernel module (`inherit module`) with a parameter, loaded automatically at boot |
 | `recipes-kernel/linux/` | `.bbappend`s for `linux-yocto` (QEMU) and `linux-stm32mp` (ST board) that add the same kernel config fragment (exFAT as a module), plus the kernel options RAUC needs for the ST kernel |
 | `sdk-example/` | A program cross-compiled outside BitBake with the SDK generated from `my-image` |
@@ -68,6 +70,7 @@ bitbake-layers add-layer ../../meta-openembedded/meta-oe ../../meta-openembedded
 #   MACHINE = "stm32mp25-disco"
 #   DISTRO = "mydistro"
 #   MACHINE_FEATURES:append = " nogpu"   (ST GPU EULA not accepted, see step 11)
+#   ST_EXTLINUX_PACKAGE = "ab-bootscript" (A/B boot script instead of extlinux.conf, see step 12)
 bitbake my-image
 
 # board in USB boot mode, then:
@@ -357,6 +360,43 @@ to learn. The concepts (A/B slots, boot counting, rollback, signed bundles) are 
 - **Observation:** adding a `DISTRO_FEATURES` entry rebuilt only about 400 tasks, unlike the
   systemd switch. A task's signature only changes if the task actually uses the variable, and few
   recipes check for `rauc`; switching to systemd changed many more variables and recipes.
+
+**12b: Two rootfs slots and an A/B boot script**
+- ST's flash layout generator can duplicate partitions (that is how `fsbla1`/`fsbla2` exist). Setting
+  the copy field of `PARTITIONS_IMAGES[rootfs]` to `2` in `my-image.bb` produced `rootfs1` and
+  `rootfs2` (4 GiB each), both filled with the same image, and moved `userfs` behind them.
+- Explored U-Boot on the board (`printenv`, `part list`): the distro boot scans the partition
+  with the bootable flag (`bootfs`) for `extlinux/extlinux.conf` first, then for `boot.scr`.
+  Booted Linux by hand from the U-Boot prompt (`part number`, `part uuid`, `load`, `setenv
+  bootargs`, `booti`) to test each command before writing a script.
+- Wrote `boot.cmd` (RAUC's standard U-Boot logic): take the first slot in `BOOT_ORDER` with
+  attempts left, decrement `BOOT_x_LEFT`, `saveenv`, then boot with `root=PARTUUID=<uuid of
+  rootfs1/2>` and `rauc.slot=A/B`. The partition UUID is looked up by name at boot time, because
+  STM32CubeProgrammer gives the new partitions random UUIDs. The recipe `ab-bootscript` builds it
+  with `mkimage -T script` and installs it to `/boot`, which ST splits into `bootfs`.
+  `ST_EXTLINUX_PACKAGE ??= "stm32mp-extlinux"` in ST's machine config is a weak default, so
+  setting it to `ab-bootscript` replaces `extlinux.conf` without touching ST's layer.
+- Linux side: `fw_printenv` / `fw_setenv` need `/etc/fw_env.config`. ST only ships examples
+  (`fw_env.config.mmc`) that point to `/dev/disk/by-partlabel/u-boot-env`. Found the real layout
+  with `hexdump`: the environment is in the last 8 KiB of the partition, and the flag byte after
+  the CRC shows a **redundant environment** (two copies; U-Boot writes the copy not in use, so a
+  power cut while saving can never destroy both). Installed my own config through a
+  `u-boot-fw-config-stm32mp_%.bbappend`.
+- **Problem: device names are not stable.** The board also has an 8 GB eMMC with an old ST image
+  and the same partition names, so `by-partlabel` links pointed to a mix of both devices. And the
+  SD card was `mmcblk0` in one boot and `mmcblk1` in the next (the kernel numbers MMC devices in
+  probe order, including the SDIO WiFi controller). My first `fw_env.config` with `/dev/mmcblk0p7`
+  suddenly pointed to the eMMC; `fw_printenv` refused because the checksum did not match, before
+  anything was written. Fixed with `/dev/disk/by-path/...48220000.mmc-part7`, which is based on
+  the SD controller's address in the chip.
+- Tested on the board: booting slot A three times without marking it good used up its attempts,
+  and U-Boot fell back to slot B by itself (`Booting slot B (rootfs2), attempts left: A=0 B=2`,
+  `/` on `...p11`, `rauc.slot=B`). Resetting the counters and `BOOT_ORDER` with `fw_setenv`
+  switched back to A. The U-Boot log alternates between `Writing to redundant MMC(0)` and
+  `Writing to MMC(0)`, i.e. between the two environment copies.
+- Hardware lesson: STM32CubeProgrammer did not find the board because the USB-C cable on the
+  flashing port was charge-only (`lsusb` showed only the ST-LINK, no DFU device).
+- Not done yet: the kernel is still in the shared `bootfs`, so updates cannot change it.
 
 ### Other things learned along the way
 
