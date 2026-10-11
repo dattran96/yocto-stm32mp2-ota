@@ -444,6 +444,17 @@ to learn. The concepts (A/B slots, boot counting, rollback, signed bundles) are 
   `booted` / `inactive` in parentheses shows which slot is running. Right after an install the
   running slot is `o` and the new slot is `x`.
 
+**12e: Rollback test**
+- Built version 1.2 and installed it from the USB stick while 1.1 was running from slot B, so
+  RAUC wrote it into slot A and set `BOOT_ORDER=A B`.
+- Simulated an update that never finishes booting (e.g. a power cut during the first boot): pressed
+  reset three times during the kernel boot, before `rauc-mark-good` could run. Each time U-Boot
+  decreased `BOOT_A_LEFT`; with A at 0 attempts it booted slot B on its own.
+- Result: the board came up with the old version 1.1 from B. `rauc status` shows A as `bad` and B
+  as booted and activated; `fw_printenv` shows `BOOT_ORDER=A B`, `BOOT_A_LEFT=0`, `BOOT_B_LEFT=3`.
+  RAUC reports B as activated even though A is first in `BOOT_ORDER`, because a slot without
+  attempts left is skipped by the boot script. The next install goes into A again and resets it.
+
 ### Other things learned along the way
 
 - `Ctrl-Z` pauses a command instead of cancelling it. A paused `devtool build` kept
@@ -460,4 +471,6 @@ to learn. The concepts (A/B slots, boot counting, rollback, signed bundles) are 
 - [x] Kernel: an out-of-tree kernel module recipe, loaded at boot
 - [x] Create my own distro config instead of using `poky`
 - [x] Build for real hardware (STM32MP257F-DK with `meta-st-stm32mp`)
-- [ ] OTA updates with RAUC: A/B rootfs, U-Boot boot selection, signed bundles, rollback
+- [x] OTA updates with RAUC: A/B rootfs, U-Boot boot selection, signed bundles, rollback
+- [ ] OTA: kernel and device tree inside each rootfs slot, so updates can change the kernel
+- [ ] OTA: persistent data partition and a central RAUC status file (`data-directory`)
