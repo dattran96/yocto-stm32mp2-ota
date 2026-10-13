@@ -17,10 +17,10 @@ do_compile() {
     mkimage -C none -A ${UBOOT_ARCH} -T script -d ${S}/boot.cmd ${B}/boot.scr
 }
 
-# /boot is split off into the bootfs partition by ST's image classes
+# Everything below this directory ends up in the bootfs partition
 do_install() {
-    install -d ${D}/boot
-    install -m 0644 ${B}/boot.scr ${D}/boot/
+    install -d ${D}${STM32MP_BOOTFS_MOUNTPOINT}
+    install -m 0644 ${B}/boot.scr ${D}${STM32MP_BOOTFS_MOUNTPOINT}/
 }
 
-FILES:${PN} = "/boot"
+FILES:${PN} = "${STM32MP_BOOTFS_MOUNTPOINT}"

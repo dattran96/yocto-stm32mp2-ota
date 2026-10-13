@@ -40,7 +40,7 @@ saveenv
 
 part number mmc ${devnum} ${rootpartname} rootpart
 part uuid mmc ${devnum}:${rootpart} rootuuid
-load mmc ${devnum}:${distro_bootpart} ${kernel_addr_r} /Image.gz
-load mmc ${devnum}:${distro_bootpart} ${fdt_addr_r} /${fdtfile}
+load mmc ${devnum}:${rootpart} ${kernel_addr_r} /boot/Image.gz
+load mmc ${devnum}:${rootpart} ${fdt_addr_r} /boot/${fdtfile}
 setenv bootargs "root=PARTUUID=${rootuuid} rootwait rw earlycon console=${console},${baudrate} rauc.slot=${raucslot}"
 booti ${kernel_addr_r} - ${fdt_addr_r}

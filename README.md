@@ -90,6 +90,7 @@ bitbake-layers add-layer ../../meta-openembedded/meta-oe ../../meta-openembedded
 #   DISTRO = "mydistro"
 #   MACHINE_FEATURES:append = " nogpu"   (ST GPU EULA not accepted, see step 11)
 #   ST_EXTLINUX_PACKAGE = "ab-bootscript" (A/B boot script instead of extlinux.conf, see step 12)
+#   STM32MP_BOOTFS_MOUNTPOINT = "/bootfs"  (kernel stays in each rootfs slot, see step 12f)
 #   RAUC_KEY_FILE / RAUC_CERT_FILE = your bundle signing key and certificate (not in this repo)
 bitbake my-image
 
@@ -471,6 +472,23 @@ to learn. The concepts (A/B slots, boot counting, rollback, signed bundles) are 
   as booted and activated; `fw_printenv` shows `BOOT_ORDER=A B`, `BOOT_A_LEFT=0`, `BOOT_B_LEFT=3`.
   RAUC reports B as activated even though A is first in `BOOT_ORDER`, because a slot without
   attempts left is skipped by the boot script. The next install goes into A again and resets it.
+
+**12f: Kernel and device tree inside each slot**
+- So far the kernel was in the shared `bootfs`, so updates could not change it, and new kernel
+  modules in an updated rootfs would not have matched the old kernel.
+- ST builds one complete root filesystem tree and then *splits* it
+  (`image_types-stsplitpartitions.bbclass`): the content of each partition's mount point directory
+  (`/boot`, `/vendor`, `/usr/local`) becomes that partition's image and is removed from the rootfs
+  image. The mount points come from weak defaults like `STM32MP_BOOTFS_MOUNTPOINT ?= "/boot"`.
+  This only happens at build time; which partition is mounted where at runtime is decided by
+  `/etc/fstab` (my image mounts nothing besides `/`).
+- Set `STM32MP_BOOTFS_MOUNTPOINT = "/bootfs"`: `/boot` with kernel and device trees now stays in
+  the rootfs image, i.e. in each slot and in each RAUC bundle, and only `boot.scr` (installed to
+  `${STM32MP_BOOTFS_MOUNTPOINT}` by `ab-bootscript`) goes to the `bootfs` partition. `boot.scr`
+  now loads `/boot/Image.gz` and `/boot/${fdtfile}` from the selected slot's partition.
+- Checked with `debugfs` before flashing (bootfs: only `boot.scr`; rootfs: empty `/bootfs`,
+  kernel in `/boot`), and on the board: `/boot` lists the kernel and device trees of the running
+  slot, `/bootfs` is empty.
 
 ### Other things learned along the way
 
