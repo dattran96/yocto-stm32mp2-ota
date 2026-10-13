@@ -489,6 +489,15 @@ to learn. The concepts (A/B slots, boot counting, rollback, signed bundles) are 
 - Checked with `debugfs` before flashing (bootfs: only `boot.scr`; rootfs: empty `/bootfs`,
   kernel in `/boot`), and on the board: `/boot` lists the kernel and device trees of the running
   slot, `/bootfs` is empty.
+- Proved it with an update that changes only the kernel: a config fragment `localversion.cfg`
+  (`CONFIG_LOCALVERSION="-mydistro"`) in `linux-stm32mp_%.bbappend`. Installed the bundle from
+  the USB stick while slot A ran `6.6.129`; after the reboot slot B ran `6.6.129-mydistro`, and
+  `mymod`, rebuilt for the new kernel, still loaded. `rauc status mark-active other` and a
+  reboot brought back slot A with the old `6.6.129`: kernel rollback works the same way as
+  rootfs rollback.
+- Mistake: I forgot to raise `DISTRO_VERSION`, so both slots reported version 1.2 although they
+  run different kernels. A release needs a new version every time, or `rauc status` and
+  `/etc/os-release` cannot tell the two builds apart.
 
 ### Other things learned along the way
 
@@ -511,8 +520,9 @@ to learn. The concepts (A/B slots, boot counting, rollback, signed bundles) are 
 Planned, in this order:
 
 1. **OTA stage 2 and verified kernel boot**
-   - [ ] Kernel and device tree as a FIT image inside each rootfs slot, so updates can change the
-         kernel; `boot.scr` loads it from the selected slot
+   - [x] Kernel and device tree inside each rootfs slot, so updates can change the kernel;
+         `boot.scr` loads them from the selected slot
+   - [ ] Kernel and device tree as one FIT image
    - [ ] Signed FIT image: U-Boot verifies kernel and device tree before booting
 2. **Persistent data**
    - [ ] Mount `userfs` as a data partition that survives updates
