@@ -8,6 +8,9 @@ including automatic rollback.
 - **A/B OTA updates with RAUC:** two rootfs slots in ST's flash layout, a U-Boot boot script with
   attempt counters and fallback, signed `verity` bundles, and a rollback test that interrupts the
   first boots of an update ([step 12](#step-12-ota-updates-with-rauc-in-progress)).
+- **Verified kernel boot:** the kernel and device tree are one FIT image signed with my key;
+  U-Boot carries the public key inside the FIP and refuses unsigned kernels
+  ([step 12h](#step-12-ota-updates-with-rauc-in-progress)).
 - **Board bring-up and BSP debugging:** traced an OP-TEE panic in the secure firmware back to a
   GPU driver that ST's recipes only blacklist in some configurations; adapted kernel config
   fragments to ST's kernel recipe ([step 11](#step-11-building-for-real-hardware-stm32mp257f-dk)).
@@ -96,6 +99,9 @@ bitbake-layers add-layer ../../meta-openembedded/meta-oe ../../meta-openembedded
 #   ST_EXTLINUX_PACKAGE = "ab-bootscript" (A/B boot script instead of extlinux.conf, see step 12)
 #   STM32MP_BOOTFS_MOUNTPOINT = "/bootfs"  (kernel stays in each rootfs slot, see step 12f)
 #   MACHINE_FEATURES:append = " fit"     (kernel + device tree as one FIT image, see step 12g)
+#   UBOOT_SIGN_ENABLE = "1", UBOOT_SIGN_KEYDIR, UBOOT_SIGN_KEYNAME = "fitconf",
+#   UBOOT_MKIMAGE_DTCOPTS = "-I dts -O dtb -p 2000", UBOOT_DTB_BINARY = ""
+#                                        (signed FIT, key not in this repo, see step 12h)
 #   RAUC_KEY_FILE / RAUC_CERT_FILE = your bundle signing key and certificate (not in this repo)
 bitbake my-image
 
@@ -543,6 +549,35 @@ to learn. The concepts (A/B slots, boot counting, rollback, signed bundles) are 
   `REPRODUCIBLE_TIMESTAMP_ROOTFS` (same inputs give byte-identical images). The loose `.dtb`
   files and ST's splash screens are still in `/boot` but no longer used.
 
+**12h: Signed FIT image**
+- The hashes from 12g are stored in the same file as the data: they catch damage, but anyone
+  can build a new FIT with matching hashes. Signing adds trust from outside the file: the build
+  signs each FIT configuration with my private key, and U-Boot checks it with the public key in
+  its own device tree.
+- ST's layer already supports it (commented example in `stm32mp15-eval.conf`). Created an RSA
+  key pair in `~/yocto-keys/fit/` (not in the repo) and set `UBOOT_SIGN_ENABLE`,
+  `UBOOT_SIGN_KEYDIR`, `UBOOT_SIGN_KEYNAME = "fitconf"` and `UBOOT_MKIMAGE_DTCOPTS` (room for the
+  signature) in `local.conf`. `UBOOT_SIGN_ENABLE` also adds `CONFIG_FIT_SIGNATURE` and
+  `CONFIG_RSA` to ST's U-Boot build.
+- **Problem:** `do_uboot_assemble_fitimage` failed with `Unimplemented compression type 1` and
+  `uboot-mkimage: Invalid FIT blob`. Two layers implement the same feature: poky's generic
+  `uboot-sign.bbclass` and ST's U-Boot recipe both embed the key, and poky's self-check fails on
+  its own empty dummy FIT. `UBOOT_DTB_BINARY = ""` switches off poky's part, as ST's example says.
+- Checked both halves before flashing (commands in [docs/verify.md](docs/verify.md)):
+  `dumpimage -l` shows `Sign algo: sha256,rsa2048:fitconf` on the configurations. For U-Boot I
+  unpacked the FIP that gets flashed with `fiptool` and compared its `HW_CONFIG` (U-Boot's
+  device tree) with `cmp`: it is the `...-with-signature.dtb`, and `fdtget` shows
+  `/signature/key-fitconf` with `required = conf`. Checking the FIP, not only the deployed
+  `.dtb`, matters: a U-Boot without the key only checks hashes and boots any kernel, silently.
+- Tests on the board: the normal boot now prints
+  `Verifying Hash Integrity ... sha256,rsa2048:fitconf+ OK`. Then I loaded the unsigned FIT
+  from 12g (saved before the build) from the slot: `iminfo` still reports all hashes OK, but
+  `bootm` refuses it: `No 'signature' subnode found ...`, `Failed to verify required signature
+  'key-fitconf'`, `ERROR: can't get kernel image!`. The signed FIT from the same partition boots.
+- Not covered yet: U-Boot itself is not verified. Anyone who can write the SD card can replace
+  the FIP with a U-Boot without the key. Closing that gap is TF-A/FIP signing with keys in the
+  chip's OTP fuses (planned, without actually closing the fuses).
+
 ### Other things learned along the way
 
 - `Ctrl-Z` pauses a command instead of cancelling it. A paused `devtool build` kept
@@ -567,7 +602,7 @@ Planned, in this order:
    - [x] Kernel and device tree inside each rootfs slot, so updates can change the kernel;
          `boot.scr` loads them from the selected slot
    - [x] Kernel and device tree as one FIT image, hashes checked by U-Boot
-   - [ ] Signed FIT image: U-Boot verifies kernel and device tree before booting
+   - [x] Signed FIT image: U-Boot verifies kernel and device tree before booting
 2. **Persistent data**
    - [ ] Mount `userfs` as a data partition that survives updates
    - [ ] Central RAUC status file (`data-directory`) on that partition

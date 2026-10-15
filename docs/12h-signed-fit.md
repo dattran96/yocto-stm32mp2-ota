@@ -3,8 +3,6 @@
 **Goal:** U-Boot boots only kernels signed with your key.
 Learning log: [step 12h](../README.md#step-12-ota-updates-with-rauc-in-progress).
 
-> Status: build and build checks done; board test in progress.
-
 ## Background
 The hashes from 12g sit in the same file as the data, so anyone can build a new FIT with
 matching hashes. Signing adds trust from outside the file:
@@ -82,7 +80,26 @@ Same idea as the RAUC bundles: the device only holds the public part.
    STM32MP> load mmc 0:${rootpart} ${kernel_addr_r} /boot/fitImage-unsigned
    STM32MP> bootm ${kernel_addr_r}
    ```
-   **Expected:** U-Boot refuses to boot it. `boot` starts the normal, signed kernel.
+   **Expected:** `iminfo` still shows `sha256+` for every image (the file is intact, just not
+   signed), but `bootm` refuses it:
+   ```
+   Verifying Hash Integrity ...  error!
+   No 'signature' subnode found for '<NULL>' hash node in 'conf-stm32mp257f-dk.dtb' config node
+   Failed to verify required signature 'key-fitconf'
+   Bad Data Hash
+   ERROR: can't get kernel image!
+   ```
+3. **For comparison**, the signed FIT from the same partition:
+   ```
+   STM32MP> load mmc 0:${rootpart} ${kernel_addr_r} /boot/fitImage
+   STM32MP> bootm ${kernel_addr_r}
+   ```
+   **Expected:** `sha256,rsa2048:fitconf+ OK` and the kernel starts.
+
+## What this does not protect
+U-Boot itself is not verified yet: whoever can write the SD card can replace the FIP with a
+U-Boot that has no key. That gap is closed by signing TF-A and the FIP, with the root key hash
+in the chip's OTP fuses (next part of the plan).
 
 ## Errors you may see
 - `do_uboot_assemble_fitimage` fails with `Unimplemented compression type 1`,
