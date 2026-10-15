@@ -30,7 +30,7 @@ systemd). It contains:
 | `recipes-microsocks/microsocks/` | A recipe for a third-party project from GitHub, created with `devtool add`, plus a local patch |
 | `recipes-core/images/my-image.bb` | A custom image recipe (`inherit core-image`) with an SSH server |
 | `recipes-sysmon/sysmon/` | A CMake project (`inherit cmake`) packaged as a daemon that starts at boot, with both a SysVinit script and a systemd unit |
-| `recipes-bsp/ab-bootscript/` | A U-Boot boot script that selects the A or B root filesystem for RAUC, with boot attempt counters and fallback |
+| `recipes-bsp/ab-bootscript/` | A U-Boot boot script that selects the A or B root filesystem for RAUC, with boot attempt counters and fallback, and boots the slot's FIT image (kernel + device tree, checked with sha256) |
 | `recipes-bsp/u-boot/` | `fw_env.config` so that `fw_printenv` / `fw_setenv` (and RAUC) can access the U-Boot environment from Linux |
 | `recipes-core/rauc/` | `rauc-conf.bbappend` with the board's RAUC `system.conf` (two rootfs slots, U-Boot backend) and the public CA certificate |
 | `recipes-core/bundles/my-bundle.bb` | A signed RAUC update bundle (`verity` format) with the rootfs of `my-image` |
@@ -91,6 +91,7 @@ bitbake-layers add-layer ../../meta-openembedded/meta-oe ../../meta-openembedded
 #   MACHINE_FEATURES:append = " nogpu"   (ST GPU EULA not accepted, see step 11)
 #   ST_EXTLINUX_PACKAGE = "ab-bootscript" (A/B boot script instead of extlinux.conf, see step 12)
 #   STM32MP_BOOTFS_MOUNTPOINT = "/bootfs"  (kernel stays in each rootfs slot, see step 12f)
+#   MACHINE_FEATURES:append = " fit"     (kernel + device tree as one FIT image, see step 12g)
 #   RAUC_KEY_FILE / RAUC_CERT_FILE = your bundle signing key and certificate (not in this repo)
 bitbake my-image
 
@@ -499,6 +500,45 @@ to learn. The concepts (A/B slots, boot counting, rollback, signed bundles) are 
   run different kernels. A release needs a new version every time, or `rauc status` and
   `/etc/os-release` cannot tell the two builds apart.
 
+**12g: Kernel and device tree as one FIT image**
+- A FIT (Flattened Image Tree) packs the kernel, the device trees and a sha256 hash of each into
+  one file, plus *configurations* that say which kernel goes with which device tree. U-Boot checks
+  the hashes before booting, and it is the format U-Boot can verify signatures on (next step).
+- ST's machine feature `fit` switches the kernel recipe to `KERNEL_IMAGETYPE = "fitImage"`:
+  `MACHINE_FEATURES:append = " fit"` in `local.conf`. `/boot` in the rootfs now holds `fitImage`
+  instead of `Image.gz`.
+- Inspected it on the host with `oe-run-native u-boot-tools-native dumpimage -l <fitImage>`: a
+  gzip-compressed kernel with load address `0xc4000000`, three device trees, and the default
+  configuration `conf-stm32mp257f-dk.dtb`. Checked the memory layout: U-Boot loads the 11 MB FIT
+  to `kernel_addr_r` (`0x8a000000`) and unpacks the 28 MB kernel to `0xc4000000`, so they do not
+  overlap.
+- Installed the FIT build (1.3) with RAUC **before** changing the boot script, on purpose: the
+  old `boot.scr` failed with `Failed to load '/boot/Image.gz'`, then ran `booti` on whatever was
+  in RAM (`Bad Linux ARM64 Image magic!`) and stopped at the U-Boot prompt. Two lessons:
+  - `boot.scr` is in the shared `bootfs`, which RAUC does not update, so an update must not
+    change the kernel format unless the installed boot script can handle it.
+  - The fallback to the other slot only happens on the *next* reset. A device in the field would
+    have waited at the prompt forever.
+- Booted the FIT by hand from the U-Boot prompt: `load` it, `iminfo` (lists the contents and
+  checks every hash: `sha256+`), set `bootargs`, then `bootm ${kernel_addr_r}#conf-stm32mp257f-dk.dtb`.
+  1.3 came up from slot B.
+- New `boot.cmd`: `if load ... /boot/fitImage; then bootm ${kernel_addr_r}; fi`, using the FIT's
+  default configuration, so the script does not need the device tree name; if loading or
+  booting fails it prints a message and runs `reset`. Copied the new `boot.scr` into the bootfs
+  partition from Linux (taken out of the bootfs image with `debugfs -R "dump ..."`).
+- Tests: slot B booted the FIT on its own (`Verifying Hash Integrity ... sha256+ OK`). Then
+  `rauc status mark-active other` selected slot A, which still had 1.2 without a FIT: U-Boot
+  printed `Booting slot A failed, resetting` and reset by itself until A had no attempts left,
+  then booted B. `rauc status` showed A as `bad`, B booted and good, with nobody pressing reset.
+- Mistakes on the way: ran `bitbake` in the QEMU build directory (`source oe-init-build-env`
+  without an argument opens `build/`), where the bbappends for ST's recipes have no recipe to
+  apply to (`No recipes in default available for: ...linux-stm32mp_%.bbappend`); and looked
+  for the FIT in the wrong place, because ST deploys kernel files into a `kernel/` subfolder of
+  the deploy directory.
+- Side notes: all files in the rootfs show the date 9 March 2018 because of
+  `REPRODUCIBLE_TIMESTAMP_ROOTFS` (same inputs give byte-identical images). The loose `.dtb`
+  files and ST's splash screens are still in `/boot` but no longer used.
+
 ### Other things learned along the way
 
 - `Ctrl-Z` pauses a command instead of cancelling it. A paused `devtool build` kept
@@ -522,7 +562,7 @@ Planned, in this order:
 1. **OTA stage 2 and verified kernel boot**
    - [x] Kernel and device tree inside each rootfs slot, so updates can change the kernel;
          `boot.scr` loads them from the selected slot
-   - [ ] Kernel and device tree as one FIT image
+   - [x] Kernel and device tree as one FIT image, hashes checked by U-Boot
    - [ ] Signed FIT image: U-Boot verifies kernel and device tree before booting
 2. **Persistent data**
    - [ ] Mount `userfs` as a data partition that survives updates

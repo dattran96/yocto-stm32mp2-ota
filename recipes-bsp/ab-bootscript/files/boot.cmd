@@ -40,7 +40,17 @@ saveenv
 
 part number mmc ${devnum} ${rootpartname} rootpart
 part uuid mmc ${devnum}:${rootpart} rootuuid
-load mmc ${devnum}:${rootpart} ${kernel_addr_r} /boot/Image.gz
-load mmc ${devnum}:${rootpart} ${fdt_addr_r} /boot/${fdtfile}
 setenv bootargs "root=PARTUUID=${rootuuid} rootwait rw earlycon console=${console},${baudrate} rauc.slot=${raucslot}"
-booti ${kernel_addr_r} - ${fdt_addr_r}
+
+# The FIT holds kernel + device tree with sha256 hashes; bootm checks them
+# and uses the FIT's default configuration (the matching device tree).
+if load mmc ${devnum}:${rootpart} ${kernel_addr_r} /boot/fitImage; then
+  bootm ${kernel_addr_r}
+fi
+
+# Only reached if loading or booting failed. Reset so the next attempt
+# (and, once the counter is used up, the other slot) is tried without
+# someone pressing the reset button.
+echo "Booting slot ${raucslot} failed, resetting"
+sleep 3
+reset
