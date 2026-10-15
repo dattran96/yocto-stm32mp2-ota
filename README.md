@@ -37,9 +37,13 @@ systemd). It contains:
 | `recipes-kernel/mymod/` | An out-of-tree kernel module (`inherit module`) with a parameter, loaded automatically at boot |
 | `recipes-kernel/linux/` | `.bbappend`s for `linux-yocto` (QEMU) and `linux-stm32mp` (ST board) that add the same kernel config fragment (exFAT as a module), plus the kernel options RAUC needs for the ST kernel |
 | `sdk-example/` | A program cross-compiled outside BitBake with the SDK generated from `my-image` |
+| `docs/` | Follow-along guides for each lesson, and a cheat sheet for checking build results |
 
 The [learning log](#learning-log) below records what I did at each step, the
-problems I ran into and how I solved them.
+problems I ran into and how I solved them. To repeat a lesson yourself, use the
+[follow-along guides](docs/README.md): the commands for the PC and the board, with the
+output to expect. [docs/verify.md](docs/verify.md) collects the commands I use to check
+build results (image contents, kernel config, FIT image, FIP, RAUC bundle) before flashing.
 
 ## Building
 
