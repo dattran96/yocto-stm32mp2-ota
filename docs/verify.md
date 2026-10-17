@@ -95,6 +95,10 @@ PC$ debugfs -R "ls -l /" $D/my-image-stm32mp25-disco.splitted-bootfs.ext4
   - rootfs `/boot` has `fitImage` (a symlink) and `fitImage-<version>`.
   - bootfs is empty (since step 13c; before that it held only `boot.scr`).
   - `blacklist.conf` contains `blacklist etnaviv` (step 11).
+- `debugfs ls` may show its output in a pager that closes at once, so nothing appears. Add
+  `| cat`: `debugfs -R "ls -l /data" <image> | cat`.
+- `/etc/fstab` ends with the `/data` line (since step 14):
+  `debugfs -R "cat /etc/fstab" $D/my-image-stm32mp25-disco.splitted-rootfs.ext4 | tail -2`
 - All files show the date 9 March 2018. That is `REPRODUCIBLE_TIMESTAMP_ROOTFS`, not an error.
 - ST splits the image: `my-image-*.rootfs.ext4` still contains everything, while
   `...splitted-rootfs.ext4` is what actually goes into the rootfs partitions.
@@ -231,6 +235,11 @@ PC$ ls tmp/work/*/<recipe>/*/temp/
 | U-Boot env from Linux | `fw_printenv \| grep BOOT_` | `BOOT_ORDER`, `BOOT_A_LEFT`, `BOOT_B_LEFT` |
 | Stable disk names | `ls -l /dev/disk/by-path/` | `...48220000.mmc-partN` = SD card |
 | Name of a raw partition | `cat /sys/class/block/$(basename $(readlink -f <dev>))/uevent` | `PARTNAME=fip-a` (BusyBox `blkid` shows nothing without a filesystem) |
+| Data partition mounted and grown? | `df -h /data` | `/dev/mmcblkNp12`, `6.5G` (size of the partition) |
+| Journal on `/data`? | `dmesg \| grep mmcblk.p12` | `r/w with ordered data mode` (not `without journal`) |
+| Growfs and journal services | `systemctl status systemd-growfs@data data-journal` | growfs `active (exited)`; `data-journal` `status=0/SUCCESS` (oneshot, so `inactive (dead)` is fine) |
+| RAUC waits for `/data`? | `systemctl show rauc -p RequiresMountsFor` | `/run/rauc/mnt /data` |
+| RAUC slot status | `cat /data/rauc/central.raucs` | a `[slot.rootfs.N]` section per installed slot, `bundle.version`, `sha256` of the rootfs image |
 | Secure boot state | first console lines after power-on | `TRUSTED_BOARD_BOOT support enabled`, `ROTPK is not deployed ...` on an open chip |
 
 In U-Boot:

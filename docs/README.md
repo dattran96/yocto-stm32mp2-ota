@@ -25,9 +25,12 @@ can follow yourself. The learning log says *what I did and what went wrong*; the
 | [12g Kernel as a FIT image](12g-fit-image.md) | Step 12g | Board |
 | [12h Signed FIT image](12h-signed-fit.md) | Step 12h | Board |
 | [13 Secure boot chain](13-secure-boot.md) | Step 13 | Board |
+| [14 Persistent data partition](14-data-partition.md) | Step 14 | Board |
 
 ## Conventions
 
+- Guides 01–13 mark each command with a prompt (below). From guide 14 on, command blocks have
+  no prompt, so they can be copied as they are; a line above each block says where to run it.
 - `PC$` is a shell on the build host, inside the build environment
   (`source oe-init-build-env <build dir>` from the `poky` folder).
 - `board#` is the serial console of the board, logged in as `root`

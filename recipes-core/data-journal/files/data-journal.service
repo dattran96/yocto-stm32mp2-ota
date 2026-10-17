@@ -1,0 +1,13 @@
+[Unit]
+Description=Add an ext4 journal to /data
+# ST builds userfs without a journal (too small). Add one after
+# systemd-growfs has grown it; the kernel uses it from the next mount.
+After=systemd-growfs@data.service
+RequiresMountsFor=/data
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'tune2fs -l /dev/disk/by-path/platform-42080000.bus-amba-48220000.mmc-part12 | grep -q has_journal || tune2fs -O has_journal /dev/disk/by-path/platform-42080000.bus-amba-48220000.mmc-part12'
+
+[Install]
+WantedBy=multi-user.target

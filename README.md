@@ -11,7 +11,9 @@ including automatic rollback.
   environment can change the boot ([step 13](#step-13-secure-boot-chain-in-progress)).
 - **A/B OTA updates with RAUC:** two rootfs slots in ST's flash layout, a U-Boot boot script with
   attempt counters and fallback, signed `verity` bundles, and a rollback test that interrupts the
-  first boots of an update ([step 12](#step-12-ota-updates-with-rauc-in-progress)).
+  first boots of an update ([step 12](#step-12-ota-updates-with-rauc-in-progress)). Data and
+  RAUC's slot status live on a separate `/data` partition that updates never touch
+  ([step 14](#step-14-persistent-data-partition)).
 - **Verified kernel boot:** the kernel and device tree are one FIT image signed with my key;
   U-Boot carries the public key inside the FIP and refuses unsigned kernels
   ([step 12h](#step-12-ota-updates-with-rauc-in-progress)).
@@ -39,7 +41,9 @@ systemd). It contains:
 | `recipes-sysmon/sysmon/` | A CMake project (`inherit cmake`) packaged as a daemon that starts at boot, with both a SysVinit script and a systemd unit |
 | `recipes-bsp/u-boot/u-boot-stm32mp*` | A/B boot logic for RAUC built into U-Boot's default environment (slot selection with attempt counters and fallback, boots the slot's signed FIT image), and a locked environment that only accepts RAUC's variables |
 | `recipes-bsp/u-boot/` | `fw_env.config` so that `fw_printenv` / `fw_setenv` (and RAUC) can access the U-Boot environment from Linux |
-| `recipes-core/rauc/` | `rauc-conf.bbappend` with the board's RAUC `system.conf` (two rootfs slots, U-Boot backend) and the public CA certificate |
+| `recipes-core/rauc/` | `rauc-conf.bbappend` with the board's RAUC `system.conf` (two rootfs slots, U-Boot backend, status on `/data`) and the public CA certificate; a systemd drop-in so `rauc.service` waits for `/data` |
+| `recipes-core/base-files/` | Adds the persistent `/data` partition to ST's `fstab`, grown to the full partition at boot (`x-systemd.growfs`) |
+| `recipes-core/data-journal/` | A oneshot service that adds the ext4 journal ST's tiny `userfs` image lacks |
 | `recipes-core/bundles/my-bundle.bb` | A signed RAUC update bundle (`verity` format) with the rootfs of `my-image` |
 | `recipes-kernel/mymod/` | An out-of-tree kernel module (`inherit module`) with a parameter, loaded automatically at boot |
 | `recipes-kernel/linux/` | `.bbappend`s for `linux-yocto` (QEMU) and `linux-stm32mp` (ST board) that add the same kernel config fragment (exFAT as a module), plus the kernel options RAUC needs for the ST kernel |
@@ -663,6 +667,37 @@ guide with diagrams: [docs/13-secure-boot.md](docs/13-secure-boot.md).
   switches to slot B. ST's `env_check` then saved the environment on every boot, so I removed it
   from `rauc_boot`; now each boot writes it once.
 
+### Step 14: Persistent data partition
+
+Goal: a place for data that survives updates and rollbacks, because RAUC writes the whole rootfs
+slot. Follow-along guide: [docs/14-data-partition.md](docs/14-data-partition.md).
+
+- ST's flash layout already has `userfs` (partition 12), but nothing mounted it. On the board the
+  partition fills the rest of the SD card (6.5 GiB), while the ext4 inside is 1.2 MiB and has no
+  journal: ST's split class sizes each partition image to its content
+  (`partition_size=$CALCULATED_SIZE`), the content is an empty `/usr/local`, and `mke2fs` adds no
+  journal to such a small filesystem.
+- Tried the mount by hand first: one line in `/etc/fstab` with the `by-path` device and
+  `x-systemd.growfs`. systemd's `systemd-growfs@data.service` grew the mounted filesystem from
+  1332 to 6838237 blocks. After the reboot the card was `mmcblk1` instead of `mmcblk0`; the
+  `by-path` name still worked.
+- In the layer: a `base-files` bbappend appends the line to ST's `fstab` (only for
+  `stm32mp25-disco`), and a small `data-journal` oneshot service adds the journal with
+  `tune2fs -O has_journal` after growfs has run; on the 1 MB filesystem it would not fit.
+  Added to a mounted filesystem, the journal shows up as an immutable `/data/.journal` file; from
+  the next mount ext4 reports `with ordered data mode` instead of `without journal`.
+- RAUC: `data-directory=/data/rauc` in `system.conf` replaces the status file inside each slot
+  (`slot.raucs`, overwritten by every update) with one `central.raucs`, and a drop-in with
+  `RequiresMountsFor=/data` keeps `rauc.service` from starting before the mount. RAUC creates
+  the folder itself (`src/context.c`).
+- Everything went to the board as two RAUC bundles (1.5 and 1.6), no flashing. Test: a file in
+  `/data` survived the update to 1.6, a file in `/etc` was gone. The first install still ran on
+  1.5 and wrote its record to the old per-slot file, so the central file stayed empty until the
+  next install from 1.6; its `sha256` and `size` match the rootfs image on the PC.
+- Mistakes on the way: mounting the partition twice made BusyBox `df` show an old mount point;
+  `debugfs ls` printed nothing because it opened a pager (`| cat` helps); relative paths like
+  `tmp/deploy/...` only work from the build folder, even though `bitbake` works from anywhere.
+
 ### Other things learned along the way
 
 - `Ctrl-Z` pauses a command instead of cancelling it. A paused `devtool build` kept
@@ -689,8 +724,8 @@ Planned, in this order:
    - [x] Kernel and device tree as one FIT image, hashes checked by U-Boot
    - [x] Signed FIT image: U-Boot verifies kernel and device tree before booting
 2. **Persistent data**
-   - [ ] Mount `userfs` as a data partition that survives updates
-   - [ ] Central RAUC status file (`data-directory`) on that partition
+   - [x] Mount `userfs` as a data partition that survives updates
+   - [x] Central RAUC status file (`data-directory`) on that partition
 3. **Device tree and a driver** (I2C sensor, e.g. BME280, on the GPIO expansion header)
    - [ ] Find the I2C controller and pins in the board schematics
    - [ ] Device tree node for the sensor in a `linux-stm32mp` bbappend; test with the existing

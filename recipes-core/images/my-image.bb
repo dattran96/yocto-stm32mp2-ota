@@ -14,6 +14,7 @@ IMAGE_INSTALL = " \
     kernel-module-exfat \
     mymod \
     rauc \
+    data-journal \
 "
 
 IMAGE_FEATURES += "ssh-server-dropbear"
