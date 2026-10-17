@@ -621,9 +621,16 @@ guide with diagrams: [docs/13-secure-boot.md](docs/13-secure-boot.md).
 - Tamper test: changed one byte in U-Boot inside the signed FIP (`fiptool unpack` / `update`,
   without re-signing) and wrote it to `fip-a` from Linux. TF-A stopped with
   `BL2: Failed to load image id 5 (-80)`: image 5 is BL33 (U-Boot), -80 is `EAUTH`.
-- So without fuses the chain catches any change to signed images, but not a complete re-sign with
-  somebody else's root key: only the key hash in the fuses ties the chain to my key. The fuses are
-  irreversible, so they come last, after the other lessons on this board.
+- Tamper test for TF-A itself: the header checksum (offset 0x44) is the sum of all bytes after the
+  0x200-byte header. I changed `dirty` to `Dirty` in TF-A's version string, recomputed the
+  checksum, kept the old signature, and wrote it only to `fsbla1` (with `fsbla2` untouched as the
+  ROM's fallback). The board printed `BL2: ...lts-v2.10.24-Dirty...`, while BL31 from the
+  unchanged FIP still printed `-dirty`: the ROM of an open chip ran a TF-A with a broken
+  signature and checks only the checksum, which anyone can recompute.
+- So without fuses, TF-A catches any change to the signed FIP, but TF-A itself can be replaced,
+  and a complete re-sign with somebody else's root key would pass too: only the key hash in the
+  fuses ties the chain to my key. The fuses are irreversible, so they come last, after the other
+  lessons on this board.
 - Practical notes: BusyBox `dd` has no `conv=` (use `sync` afterwards), BusyBox `blkid` shows
   nothing for a partition without a filesystem; `/sys/class/block/<dev>/uevent` shows `PARTNAME`.
 
@@ -687,7 +694,7 @@ Planned, in this order:
    - [x] Sign TF-A and FIP with ST's tools; tamper test shows TF-A refusing a changed U-Boot
    - [x] Document the chain of trust: ROM → TF-A → FIP → signed FIT → signed RAUC bundles
    - [x] A/B boot logic inside U-Boot, environment locked to RAUC's variables
-   - [ ] Tamper test for a signed TF-A: what does the boot ROM of an open chip check?
+   - [x] Tamper test for a signed TF-A: the open chip's boot ROM checks only the checksum
    - [ ] Remove development settings (open debug access, OP-TEE test provisioning driver)
    - [ ] Read-only rootfs with dm-verity (after the data partition from item 2)
    - [ ] Last, after all other lessons: key hash into the OTP fuses (irreversible)

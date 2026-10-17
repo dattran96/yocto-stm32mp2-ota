@@ -188,9 +188,50 @@ every certificate signature and every image hash. Prove it with a tampered U-Boo
    Image 5 is `BL33_IMAGE_ID` (U-Boot), -80 is `EAUTH` (authentication error).
 4. Recover: flash the `_Signed.tsv` layout again.
 
-What this shows: without fuses, any change to a signed image is caught, but a FIP that was signed
-completely new with somebody else's root key would be accepted. Only the fuses tie the chain to
-your key.
+What this shows: without fuses, any change to a signed image in the FIP is caught, but a FIP that
+was signed completely new with somebody else's root key would be accepted.
+
+### Does the ROM check TF-A's signature?
+
+Change one visible byte in the signed TF-A, fix the checksum so that only the signature is wrong,
+and write it only to `fsbla1`. `fsbla2` keeps the original: the ROM tries the second copy if the
+first one fails, so the board stays bootable either way.
+
+1. PC: the checksum at offset `0x44` is the sum of all bytes after the 0x200-byte header:
+   ```
+   $ mkdir -p ~/tfa-tamper && cd ~/tfa-tamper
+   $ cp $D/arm-trusted-firmware/tf-a-stm32mp257f-dk-optee-sdcard_Signed.stm32 tfa-signed.stm32
+   $ cp tfa-signed.stm32 tfa-tampered.stm32
+   $ python3 -I - tfa-tampered.stm32 <<'EOF'
+   import struct, sys
+   p = sys.argv[1]
+   d = bytearray(open(p, "rb").read())
+   i = d.find(b"lts-v2.10.24-dirty") + len("lts-v2.10.24-")
+   assert d[i:i+1] == b"d"
+   d[i] = ord("D")
+   struct.pack_into("<I", d, 0x44, sum(d[0x200:]) & 0xffffffff)
+   open(p, "wb").write(d)
+   EOF
+   $ cmp -l tfa-signed.stm32 tfa-tampered.stm32
+   ```
+   **Expected:** two lines: the checksum byte at position 69 (`0x44` + 1) and the changed letter.
+   The version string is the one TF-A prints at boot; use the one in your build.
+2. Board: check `PARTNAME=fsbla1` for partition 1 (as for `fip-a` above), then write it with
+   `dd ... bs=4096`, `sync`, `cmp`, `reboot`.
+3. **Result on an open chip:**
+   ```
+   NOTICE:  BL2: v2.10-stm32mp2-r2.0(release):lts-v2.10.24-Dirty(a07367a1)
+   NOTICE:  BL31: v2.10-stm32mp2-r2.0(release):lts-v2.10.24-dirty(a07367a1)
+   ```
+   The ROM ran the changed TF-A: without the key hash in the fuses it does not check the signature,
+   only the checksum. BL31 comes from the unchanged FIP and still prints `-dirty`.
+4. Restore `fsbla1` with `tfa-signed.stm32` the same way.
+
+| Stage | Checked on an open chip | Added by the key hash in the fuses |
+|---|---|---|
+| ROM → TF-A | checksum only | key table and signature |
+| TF-A → FIP | all signatures and hashes of the chain | the root key is compared with the fuses |
+| U-Boot → FIT | signature with the `fitconf` key from its own DTB | (unchanged) |
 
 ## 13c Boot logic inside U-Boot, locked environment
 
