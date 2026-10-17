@@ -5,6 +5,10 @@ bring-up with ST's BSP, and **A/B over-the-air updates with RAUC**, tested on re
 including automatic rollback.
 
 **Highlights**
+- **Secure boot chain:** TF-A and the FIP (BL31, OP-TEE, U-Boot) signed with my own keys and
+  checked by TF-A's chain of trust; a tampered U-Boot is refused. The A/B boot logic is built into
+  U-Boot and the U-Boot environment is locked to RAUC's variables, so no unverified script or
+  environment can change the boot ([step 13](#step-13-secure-boot-chain-in-progress)).
 - **A/B OTA updates with RAUC:** two rootfs slots in ST's flash layout, a U-Boot boot script with
   attempt counters and fallback, signed `verity` bundles, and a rollback test that interrupts the
   first boots of an update ([step 12](#step-12-ota-updates-with-rauc-in-progress)).
@@ -33,7 +37,7 @@ systemd). It contains:
 | `recipes-microsocks/microsocks/` | A recipe for a third-party project from GitHub, created with `devtool add`, plus a local patch |
 | `recipes-core/images/my-image.bb` | A custom image recipe (`inherit core-image`) with an SSH server |
 | `recipes-sysmon/sysmon/` | A CMake project (`inherit cmake`) packaged as a daemon that starts at boot, with both a SysVinit script and a systemd unit |
-| `recipes-bsp/ab-bootscript/` | A U-Boot boot script that selects the A or B root filesystem for RAUC, with boot attempt counters and fallback, and boots the slot's FIT image (kernel + device tree, checked with sha256) |
+| `recipes-bsp/u-boot/u-boot-stm32mp*` | A/B boot logic for RAUC built into U-Boot's default environment (slot selection with attempt counters and fallback, boots the slot's signed FIT image), and a locked environment that only accepts RAUC's variables |
 | `recipes-bsp/u-boot/` | `fw_env.config` so that `fw_printenv` / `fw_setenv` (and RAUC) can access the U-Boot environment from Linux |
 | `recipes-core/rauc/` | `rauc-conf.bbappend` with the board's RAUC `system.conf` (two rootfs slots, U-Boot backend) and the public CA certificate |
 | `recipes-core/bundles/my-bundle.bb` | A signed RAUC update bundle (`verity` format) with the rootfs of `my-image` |
@@ -96,12 +100,15 @@ bitbake-layers add-layer ../../meta-openembedded/meta-oe ../../meta-openembedded
 #   MACHINE = "stm32mp25-disco"
 #   DISTRO = "mydistro"
 #   MACHINE_FEATURES:append = " nogpu"   (ST GPU EULA not accepted, see step 11)
-#   ST_EXTLINUX_PACKAGE = "ab-bootscript" (A/B boot script instead of extlinux.conf, see step 12)
+#   ST_EXTLINUX_PACKAGE = ""              (no extlinux.conf/boot.scr: the A/B logic is in U-Boot, step 13)
 #   STM32MP_BOOTFS_MOUNTPOINT = "/bootfs"  (kernel stays in each rootfs slot, see step 12f)
 #   MACHINE_FEATURES:append = " fit"     (kernel + device tree as one FIT image, see step 12g)
 #   UBOOT_SIGN_ENABLE = "1", UBOOT_SIGN_KEYDIR, UBOOT_SIGN_KEYNAME = "fitconf",
 #   UBOOT_MKIMAGE_DTCOPTS = "-I dts -O dtb -p 2000", UBOOT_DTB_BINARY = ""
 #                                        (signed FIT, key not in this repo, see step 12h)
+#   SIGN_ENABLE = "1", SIGN_TOOL, SIGN_KEY, SIGN_KEY_PUB, SIGN_KEY_PASS, SIGN_COPRO_ENABLE = "0",
+#   SIGN_M33DDR_KEY(_PASS), SIGN_M33FW_KEY(_PASS)
+#                                        (signed TF-A and FIP, keys not in this repo, see step 13)
 #   RAUC_KEY_FILE / RAUC_CERT_FILE = your bundle signing key and certificate (not in this repo)
 bitbake my-image
 
@@ -109,7 +116,7 @@ bitbake my-bundle                       # signed RAUC update bundle (.raucb)
 
 # board in USB boot mode, then:
 cd tmp/deploy/images/stm32mp25-disco
-STM32_Programmer_CLI -c port=usb1 -w flashlayout_my-image/optee/FlashLayout_sdcard_stm32mp257f-dk-optee.tsv
+STM32_Programmer_CLI -c port=usb1 -w flashlayout_my-image/optee/FlashLayout_sdcard_stm32mp257f-dk-optee_Signed.tsv
 ```
 
 From the host (with `runqemu` tap networking, target at `192.168.7.2`):
@@ -578,6 +585,70 @@ to learn. The concepts (A/B slots, boot counting, rollback, signed bundles) are 
   the FIP with a U-Boot without the key. Closing that gap is TF-A/FIP signing with keys in the
   chip's OTP fuses (planned, without actually closing the fuses).
 
+### Step 13: Secure boot chain (in progress)
+
+Goal: every boot stage checks the next one, from the boot ROM to the root filesystem. Follow-along
+guide with diagrams: [docs/13-secure-boot.md](docs/13-secure-boot.md).
+
+**13a: Signed TF-A and FIP**
+- The boot ROM checks TF-A BL2 against a hash of the public key in the OTP fuses; TF-A then checks
+  the FIP (BL31, OP-TEE, U-Boot) with certificates. ST's layer does both with `SIGN_ENABLE = "1"`:
+  `STM32_SigningTool_CLI` signs TF-A (header v2.2), and TF-A is built with
+  `TRUSTED_BOARD_BOOT=1` so `cert_create` adds the certificate chain to the FIP.
+- Created the keys with `STM32_KeyGen_CLI -n 8` (ECDSA P-256) in `~/yocto-keys/stm32mp/`, outside
+  the repo. Header v2 carries a table of 8 public key hashes; the fuses would hold one hash over
+  the table, so a leaked key can be revoked without changing the fuses.
+- `m33copro` in `MACHINE_FEATURES` makes ST's signing class ask for Cortex-M33 firmware keys too.
+  There is no M33 firmware in this image, so `SIGN_COPRO_ENABLE = "0"` and the M33 key variables
+  point to the same key just to pass the check. `SIGN_TOOL` needs an absolute path, because
+  BitBake runs tasks with its own `PATH`.
+- Checked before flashing: `STM32_SigningTool_CLI -dump` shows a signature (it was all zeros),
+  public key 0 and the 8-hash table; I compared them byte by byte with the generated key files,
+  and sha256 over the 8 hashes equals `publicKeysHashHashes.bin`. `fiptool info` lists 9 new
+  certificates: the root-signed "Trusted key certificate" with the two world keys, a key and a
+  content certificate each for BL31, OP-TEE and U-Boot, and two more.
+- Reading ST's FIP script showed that only the root key is mine: `cert_create -n` generates the
+  five intermediate keys freshly on every build and discards them.
+
+**13b: What the open chip enforces**
+- On the board, TF-A prints `TRUSTED_BOARD_BOOT support enabled` and twice
+  `ROTPK is not deployed on platform. Skipping ROTPK verification.` (once per root-signed
+  certificate). TF-A's code (`plat/st/common/stm32mp_trusted_boot.c`, `drivers/auth/auth_mod.c`)
+  explains it: TF-A reads the key hash from the fuses through BSEC; on an open chip with empty
+  fuses it marks the root key "not deployed" and skips **only** the comparison of the root key
+  with the fuses. All certificate signatures and image hashes are still checked.
+  `DYN_DISABLE_AUTH` (which would switch the checks off) is not set.
+- Tamper test: changed one byte in U-Boot inside the signed FIP (`fiptool unpack` / `update`,
+  without re-signing) and wrote it to `fip-a` from Linux. TF-A stopped with
+  `BL2: Failed to load image id 5 (-80)`: image 5 is BL33 (U-Boot), -80 is `EAUTH`.
+- So without fuses the chain catches any change to signed images, but not a complete re-sign with
+  somebody else's root key: only the key hash in the fuses ties the chain to my key. The fuses are
+  irreversible, so they come last, after the other lessons on this board.
+- Practical notes: BusyBox `dd` has no `conv=` (use `sync` afterwards), BusyBox `blkid` shows
+  nothing for a partition without a filesystem; `/sys/class/block/<dev>/uevent` shows `PARTNAME`.
+
+**13c: Boot logic inside U-Boot, locked environment**
+- Two inputs of U-Boot were not verified at all: `boot.scr` in `bootfs`, and the environment in
+  `u-boot-env`. Demonstrated the second from Linux:
+  `fw_setenv bootcmd 'echo "*** ATTACK ..."; run bootcmd_stm32mp'` made U-Boot run my command on
+  the next boot. Root access in Linux was enough to change the boot, without touching a signed file.
+- Moved the A/B logic from `boot.cmd` into U-Boot's default environment: `stm32mp2.env` (U-Boot's
+  text environment format, picked up from `board/st/stm32mp2/`) with `rauc_boot`, `rauc_select`
+  and `rauc_load`, and `CONFIG_BOOTCOMMAND="run rauc_boot"`. It is now part of U-Boot, so TF-A
+  verifies it in the FIP. Every non-SD/eMMC boot still goes to ST's `bootcmd_stm32mp`, so
+  STM32CubeProgrammer (`stm32prog`) keeps working. `ST_EXTLINUX_PACKAGE = ""`, and the
+  `ab-bootscript` recipe is gone.
+- Locked the environment: `CONFIG_ENV_WRITEABLE_LIST=y` imports only variables with the `w` flag
+  from the partition, and a small patch to ST's board header marks only `BOOT_ORDER`,
+  `BOOT_A_LEFT` and `BOOT_B_LEFT` as writeable (`CFG_ENV_FLAGS_LIST_STATIC` is a C define, not a
+  Kconfig option). `CONFIG_ENV_ACCESS_IGNORE_FORCE` blocks `env set -f`.
+- Format pitfalls of `.env` files: the lines of a variable are joined with spaces, so every
+  command needs a `;`, and the file goes through the C preprocessor, so only `/* */` comments.
+- Tests on the board: normal boot without `Found U-Boot script`; the same `bootcmd` attack is
+  ignored (`fw_printenv` shows it, U-Boot does not run it); `rauc status mark-active other` still
+  switches to slot B. ST's `env_check` then saved the environment on every boot, so I removed it
+  from `rauc_boot`; now each boot writes it once.
+
 ### Other things learned along the way
 
 - `Ctrl-Z` pauses a command instead of cancelling it. A paused `devtool build` kept
@@ -600,7 +671,7 @@ Planned, in this order:
 
 1. **OTA stage 2 and verified kernel boot**
    - [x] Kernel and device tree inside each rootfs slot, so updates can change the kernel;
-         `boot.scr` loads them from the selected slot
+         the boot script loads them from the selected slot
    - [x] Kernel and device tree as one FIT image, hashes checked by U-Boot
    - [x] Signed FIT image: U-Boot verifies kernel and device tree before booting
 2. **Persistent data**
@@ -613,9 +684,13 @@ Planned, in this order:
    - [ ] Own I2C driver (`probe()`, `regmap`, sysfs/IIO interface) as an out-of-tree module
    - [ ] Debug the bus with a logic analyzer (wrong address, missing pull-ups)
 4. **Secure boot chain**
-   - [ ] Sign TF-A and FIP with ST's tools (without closing the OTP fuses, which is irreversible)
-   - [ ] Document the chain of trust: ROM → TF-A → FIP → signed FIT → signed RAUC bundles
-   - [ ] Optional: read-only rootfs with dm-verity
+   - [x] Sign TF-A and FIP with ST's tools; tamper test shows TF-A refusing a changed U-Boot
+   - [x] Document the chain of trust: ROM → TF-A → FIP → signed FIT → signed RAUC bundles
+   - [x] A/B boot logic inside U-Boot, environment locked to RAUC's variables
+   - [ ] Tamper test for a signed TF-A: what does the boot ROM of an open chip check?
+   - [ ] Remove development settings (open debug access, OP-TEE test provisioning driver)
+   - [ ] Read-only rootfs with dm-verity (after the data partition from item 2)
+   - [ ] Last, after all other lessons: key hash into the OTP fuses (irreversible)
 5. **Connectivity and comparison**
    - [ ] WiFi: chip firmware, `wpa_supplicant`, systemd-networkd config, credentials kept out of
          the repository

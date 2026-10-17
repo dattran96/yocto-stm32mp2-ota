@@ -8,6 +8,8 @@ Learning log: [step 12a–12e](../README.md#step-12-ota-updates-with-rauc-in-pro
 Board build only (`build-stm32mp`). Every partition change needs a full flash
 (guide 11, step 7). After that, updates go over RAUC.
 
+> Since [guide 13](13-secure-boot.md) the A/B logic is built into U-Boot and `boot.scr` is gone. The steps here show the earlier boot script; its files are in [git history](https://github.com/dattran96/yocto-stm32mp2-ota/blob/1ed09c9/recipes-bsp/ab-bootscript).
+
 ## 12a Add meta-rauc
 
 1. Get the layer and add it:
@@ -59,10 +61,10 @@ expected until 12c.
    STM32MP> booti ${kernel_addr_r} - ${fdt_addr_r}
    ```
    **Expected:** Linux boots with `/` on `rootfs1`, even though the script does not exist yet.
-3. **The boot script.** Write [`boot.cmd`](../recipes-bsp/ab-bootscript/files/boot.cmd): take the
+3. **The boot script.** Write [`boot.cmd`](https://github.com/dattran96/yocto-stm32mp2-ota/blob/1ed09c9/recipes-bsp/ab-bootscript/files/boot.cmd): take the
    first slot in `BOOT_ORDER` that has attempts left, decrease `BOOT_x_LEFT`, `saveenv`, then boot
    with `root=PARTUUID=...` and `rauc.slot=A|B`. The recipe
-   [`ab-bootscript.bb`](../recipes-bsp/ab-bootscript/ab-bootscript.bb) turns it into `boot.scr`
+   [`ab-bootscript.bb`](https://github.com/dattran96/yocto-stm32mp2-ota/blob/1ed09c9/recipes-bsp/ab-bootscript/ab-bootscript.bb) turns it into `boot.scr`
    with `mkimage -T script`.
 4. Use it instead of ST's `extlinux.conf`. In `local.conf`:
    ```

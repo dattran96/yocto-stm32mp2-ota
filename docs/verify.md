@@ -90,21 +90,26 @@ PC$ grep -E "EXFAT|DM_VERITY|LOCALVERSION" tmp/work-shared/stm32mp25-disco/kerne
 PC$ debugfs -R "ls -l /boot" $D/my-image-stm32mp25-disco.splitted-rootfs.ext4
 PC$ debugfs -R "cat /etc/modprobe.d/blacklist.conf" $D/my-image-stm32mp25-disco.splitted-rootfs.ext4
 PC$ debugfs -R "ls -l /" $D/my-image-stm32mp25-disco.splitted-bootfs.ext4
-PC$ debugfs -R "dump /boot.scr /tmp/boot.scr" $D/my-image-stm32mp25-disco.splitted-bootfs.ext4
 ```
 - **Expected** (since step 12g):
   - rootfs `/boot` has `fitImage` (a symlink) and `fitImage-<version>`.
-  - bootfs has only `boot.scr`.
+  - bootfs is empty (since step 13c; before that it held only `boot.scr`).
   - `blacklist.conf` contains `blacklist etnaviv` (step 11).
 - All files show the date 9 March 2018. That is `REPRODUCIBLE_TIMESTAMP_ROOTFS`, not an error.
 - ST splits the image: `my-image-*.rootfs.ext4` still contains everything, while
   `...splitted-rootfs.ext4` is what actually goes into the rootfs partitions.
 
+## U-Boot: built-in boot logic and environment
+
 ```
-PC$ strings /tmp/boot.scr | grep -E "fitImage|bootm|reset"
+PC$ strings $D/u-boot/u-boot-nodtb-stm32mp25-default.bin | grep -E "^(rauc_boot|rauc_select|rauc_load)=" | cut -c1-120
+PC$ grep -E "BOOTCOMMAND|ENV_WRITEABLE_LIST|ENV_ACCESS_IGNORE_FORCE" $D/u-boot/configuration-stm32mp25_defconfig
 ```
-- `boot.scr` is `boot.cmd` with a small `mkimage` header, so `strings` shows the script text.
-  Use it to confirm the image has the script version you expect.
+- U-Boot's default environment is stored as plain text in the binary, so `strings` shows it.
+- **Expected** (since step 13c): the three `rauc_*` variables, `CONFIG_BOOTCOMMAND="run rauc_boot"`,
+  `CONFIG_ENV_WRITEABLE_LIST=y` and `CONFIG_ENV_ACCESS_IGNORE_FORCE=y`.
+- `bootcmd=run rauc_boot` is there too, but glued to the string before it
+  (`SunMonTue…bootcmd=…`), so `^bootcmd=` does not match.
 
 ## Flash layout
 
@@ -163,6 +168,32 @@ PC$ oe-run-native dtc-native fdtget ~/fip-check/hw-config.bin /signature/key-fit
   - `sha256,rsa2048`
 - `required = conf` matters: without it, U-Boot would still boot an unsigned FIT.
 
+## Signed TF-A and FIP
+
+```
+PC$ STM32_SigningTool_CLI -dump $D/arm-trusted-firmware/tf-a-stm32mp257f-dk-optee-sdcard_Signed.stm32
+```
+- **Expected:** `Signature` not all zeros, `Extension: 0x80000001`, an `Authentication header` with
+  `ECDSA pub key` and `Key 0` … `Key 7`. The unsigned file shows `Signature: 00 00 …`.
+
+Are those your keys?
+```
+PC$ cd ~/yocto-keys/stm32mp
+PC$ xxd -p -c 32 publicKeyHash00.bin                  (compare with "Key 0" in the dump)
+PC$ cat publicKeyHash0{0..7}.bin | sha256sum
+PC$ xxd -p -c 32 publicKeysHashHashes.bin
+```
+- **Expected:** each `publicKeyHash0x.bin` equals `Key x`, and the sha256 over all eight equals
+  `publicKeysHashHashes.bin`: the value the fuses would hold.
+
+```
+PC$ oe-run-native tf-a-tools-native fiptool info $D/fip/fip-stm32mp257f-dk-optee-sdcard_Signed.bin
+```
+- **Expected:** besides BL31, OP-TEE, U-Boot and the configs: `Trusted key certificate`, a key
+  certificate and a content certificate each for SoC Firmware (BL31), Trusted OS Firmware (OP-TEE)
+  and Non-Trusted Firmware (U-Boot), `Trusted Boot Firmware BL2 certificate` and
+  `STM32MP CONFIG CERT`.
+
 ## RAUC bundle
 
 ```
@@ -199,6 +230,8 @@ PC$ ls tmp/work/*/<recipe>/*/temp/
 | What is mounted? | `mount` (`findmnt` is not in the image) | `/` on the slot's partition |
 | U-Boot env from Linux | `fw_printenv \| grep BOOT_` | `BOOT_ORDER`, `BOOT_A_LEFT`, `BOOT_B_LEFT` |
 | Stable disk names | `ls -l /dev/disk/by-path/` | `...48220000.mmc-partN` = SD card |
+| Name of a raw partition | `cat /sys/class/block/$(basename $(readlink -f <dev>))/uevent` | `PARTNAME=fip-a` (BusyBox `blkid` shows nothing without a filesystem) |
+| Secure boot state | first console lines after power-on | `TRUSTED_BOARD_BOOT support enabled`, `ROTPK is not deployed ...` on an open chip |
 
 In U-Boot:
 

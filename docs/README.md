@@ -24,6 +24,7 @@ can follow yourself. The learning log says *what I did and what went wrong*; the
 | [12f Kernel inside each slot](12f-kernel-in-slots.md) | Step 12f | Board |
 | [12g Kernel as a FIT image](12g-fit-image.md) | Step 12g | Board |
 | [12h Signed FIT image](12h-signed-fit.md) | Step 12h | Board |
+| [13 Secure boot chain](13-secure-boot.md) | Step 13 | Board |
 
 ## Conventions
 

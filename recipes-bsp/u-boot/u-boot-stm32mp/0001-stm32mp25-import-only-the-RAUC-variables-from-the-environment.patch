@@ -1,0 +1,29 @@
+From: Dat Tran <t.ng.t.dat@gmail.com>
+Subject: [PATCH] stm32mp25: import only the RAUC variables from the environment
+
+With CONFIG_ENV_WRITEABLE_LIST, U-Boot imports only variables with the
+"w" flag from the environment partition. Mark the three variables that
+RAUC changes from Linux (fw_setenv) as writeable; everything else, such
+as bootcmd and bootargs, then always comes from the default environment
+built into U-Boot.
+
+Upstream-Status: Inappropriate [board and product specific configuration]
+Signed-off-by: Dat Tran <t.ng.t.dat@gmail.com>
+---
+--- a/include/configs/stm32mp25_st_common.h
++++ b/include/configs/stm32mp25_st_common.h
+@@ -14,6 +14,14 @@
+ 
+ #include <configs/stm32mp25_common.h>
+ 
++/*
++ * RAUC A/B boot: only these variables are imported from the environment
++ * partition (CONFIG_ENV_WRITEABLE_LIST). All others, including bootcmd
++ * and bootargs, come from the default environment built into U-Boot,
++ * which TF-A verifies as part of the FIP.
++ */
++#define CFG_ENV_FLAGS_LIST_STATIC "BOOT_ORDER:sw,BOOT_A_LEFT:dw,BOOT_B_LEFT:dw"
++
+ #ifdef CFG_EXTRA_ENV_SETTINGS
+ /*
+  * default bootcmd for stm32mp25 STMicroelectronics boards:
