@@ -26,6 +26,7 @@ can follow yourself. The learning log says *what I did and what went wrong*; the
 | [12h Signed FIT image](12h-signed-fit.md) | Step 12h | Board |
 | [13 Secure boot chain](13-secure-boot.md) | Step 13 | Board |
 | [14 Persistent data partition](14-data-partition.md) | Step 14 | Board |
+| [15 Read-only rootfs](15-read-only-rootfs.md) | Step 15 | Board |
 
 ## Conventions
 

@@ -13,7 +13,8 @@ including automatic rollback.
   attempt counters and fallback, signed `verity` bundles, and a rollback test that interrupts the
   first boots of an update ([step 12](#step-12-ota-updates-with-rauc-in-progress)). Data and
   RAUC's slot status live on a separate `/data` partition that updates never touch
-  ([step 14](#step-14-persistent-data-partition)).
+  ([step 14](#step-14-persistent-data-partition)). The rootfs is read-only from the first moment
+  of boot, as preparation for dm-verity ([step 15](#step-15-read-only-rootfs-and-dm-verity-in-progress)).
 - **Verified kernel boot:** the kernel and device tree are one FIT image signed with my key;
   U-Boot carries the public key inside the FIP and refuses unsigned kernels
   ([step 12h](#step-12-ota-updates-with-rauc-in-progress)).
@@ -698,6 +699,44 @@ slot. Follow-along guide: [docs/14-data-partition.md](docs/14-data-partition.md)
   `debugfs ls` printed nothing because it opened a pager (`| cat` helps); relative paths like
   `tmp/deploy/...` only work from the build folder, even though `bitbake` works from anywhere.
 
+### Step 15: Read-only rootfs and dm-verity (in progress)
+
+Goal: the rootfs slot is never written on the board, so dm-verity can later check every block
+against a hash. Follow-along guide: [docs/15-read-only-rootfs.md](docs/15-read-only-rootfs.md).
+
+**15a: What writes to `/`**
+- First test by hand: `ro` in the `/` line of `/etc/fstab`. My first `sed` wrote `ro,defaults`,
+  which stays writable: mount options apply from left to right and `defaults` contains `rw`.
+- With `defaults,ro`, `systemd-remount-fs` failed at boot with `mount point is busy`, while the
+  same remount worked by hand later. With `/` read-only, `find / -xdev -newer <file from before
+  the reboot>` and the timestamps in `/var` showed the writers: systemd (`random-seed`, journal
+  catalog, rfkill state, timesync clock), D-Bus, ldconfig's cache, `/etc/machine-id`, and
+  Dropbear, which creates its SSH host key in `/etc/dropbear` on the first connection
+  (`systemctl start dropbearkey` failed with `/` read-only).
+
+**15b: `read-only-rootfs` (version 1.7)**
+- Poky's `read_only_rootfs_hook` handles that list at build time: `ro` and fsck pass `0` in
+  `fstab`, `DROPBEAR_RSAKEY_DIR=/var/lib/dropbear`, an empty `/etc/machine-id`. `volatile-binds`
+  (a dependency of systemd) mounts `/var/lib`, `/var/cache` and `/var/spool` as overlays with an
+  upper layer in tmpfs when they are read-only at boot, so programs can write there and the
+  changes are gone after a reboot.
+- On the board: `/` mounted `ro`, nothing failed, `touch /` refused, RAUC still marks the slot
+  good because its status is on `/data`. Not `overlayfs-etc`: its upper layer on `/data` would
+  hold unchecked files that win over the checked `/etc`.
+
+**15c: `ro` from U-Boot**
+- `/etc/machine-id` was empty in the image but had an ID on the board, without a mount over it:
+  U-Boot passed `rw`, the kernel mounted the slot writable, and systemd wrote into it two seconds
+  before `systemd-remount-fs` made it `ro`. That was also the "busy" in 15a.
+- Changed `rw` to `ro` in `rauc_load` (`stm32mp2.env`). Slots without `read-only-rootfs` still
+  become writable through their `fstab`, so a rollback to 1.6 keeps working.
+- RAUC does not update the FIP: checked `rootwait ro` in U-Boot inside the signed FIP
+  (`fiptool unpack`), wrote it to `fip-a` from Linux with `dd`, compared with `cmp`. Now dmesg
+  shows `mounted filesystem ... ro` from the start.
+- On a read-only `/`, `/mnt/usb` from another slot is missing and cannot be created; the stick
+  goes to `/run/usb` (tmpfs). ext4 printed `orphan cleanup on readonly fs` once: it writes to the
+  device even on a read-only mount, which only dm-verity prevents.
+
 ### Other things learned along the way
 
 - `Ctrl-Z` pauses a command instead of cancelling it. A paused `devtool build` kept
@@ -738,7 +777,8 @@ Planned, in this order:
    - [x] A/B boot logic inside U-Boot, environment locked to RAUC's variables
    - [x] Tamper test for a signed TF-A: the open chip's boot ROM checks only the checksum
    - [x] Document the development settings (OP-TEE provisioning driver, open debug access)
-   - [ ] Read-only rootfs with dm-verity (after the data partition from item 2)
+   - [x] Read-only rootfs (`read-only-rootfs`, `ro` from U-Boot)
+   - [ ] dm-verity for the rootfs slots
    - [ ] Last, after all other lessons: key hash into the OTP fuses (irreversible)
 5. **Connectivity and comparison**
    - [ ] WiFi: chip firmware, `wpa_supplicant`, systemd-networkd config, credentials kept out of

@@ -112,6 +112,9 @@ PC$ grep -E "BOOTCOMMAND|ENV_WRITEABLE_LIST|ENV_ACCESS_IGNORE_FORCE" $D/u-boot/c
 - U-Boot's default environment is stored as plain text in the binary, so `strings` shows it.
 - **Expected** (since step 13c): the three `rauc_*` variables, `CONFIG_BOOTCOMMAND="run rauc_boot"`,
   `CONFIG_ENV_WRITEABLE_LIST=y` and `CONFIG_ENV_ACCESS_IGNORE_FORCE=y`.
+- `strings ... | grep -o "rootwait r[ow]"` shows `rootwait ro` (since step 15c). To check U-Boot
+  inside the signed FIP, unpack it first: `fiptool unpack` (see "Signed TF-A and FIP") and run
+  `strings` on `nt-fw.bin`.
 - `bootcmd=run rauc_boot` is there too, but glued to the string before it
   (`SunMonTue…bootcmd=…`), so `^bootcmd=` does not match.
 
@@ -239,6 +242,8 @@ PC$ ls tmp/work/*/<recipe>/*/temp/
 | Journal on `/data`? | `dmesg \| grep mmcblk.p12` | `r/w with ordered data mode` (not `without journal`) |
 | Growfs and journal services | `systemctl status systemd-growfs@data data-journal` | growfs `active (exited)`; `data-journal` `status=0/SUCCESS` (oneshot, so `inactive (dead)` is fine) |
 | RAUC waits for `/data`? | `systemctl show rauc -p RequiresMountsFor` | `/run/rauc/mnt /data` |
+| Rootfs read-only from the start? | `cat /proc/cmdline`, `dmesg \| grep p1[01]` | `rootwait ro`; `mounted filesystem ... ro`, no `re-mounted ... ro` (since step 15c) |
+| Who writes into `/var/lib`? | `ls -la /var/volatile/lib` | only what this boot wrote (overlay upper layer in RAM, since step 15b) |
 | RAUC slot status | `cat /data/rauc/central.raucs` | a `[slot.rootfs.N]` section per installed slot, `bundle.version`, `sha256` of the rootfs image |
 | Secure boot state | first console lines after power-on | `TRUSTED_BOARD_BOOT support enabled`, `ROTPK is not deployed ...` on an open chip |
 
