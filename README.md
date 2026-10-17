@@ -737,6 +737,26 @@ against a hash. Follow-along guide: [docs/15-read-only-rootfs.md](docs/15-read-o
   goes to `/run/usb` (tmpfs). ext4 printed `orphan cleanup on readonly fs` once: it writes to the
   device even on a read-only mount, which only dm-verity prevents.
 
+**15d: dm-verity by hand**
+- Design decision: the root hash must come from something already verified. The FIT would be the
+  place, but the FIT is inside the rootfs, and a file cannot contain the hash of the partition it
+  is stored in. Chosen: one boot partition per slot (`bootfs1/2`) with the signed FIT and the root
+  hash, updated by RAUC together with its rootfs as a slot group. The alternative, a signed root
+  hash at the end of the partition checked by the kernel's keyring, keeps the layout but needs
+  more own code.
+- Added `cryptsetup` (`veritysetup`) to the image (1.8), so slot A runs 1.8 and B is free. On the
+  PC, `veritysetup format` with `--hash-offset` appended superblock and hash tree to a copy of
+  the rootfs image; `dd` to `rootfs2`, then `veritysetup open` with the root hash and mount
+  through `/dev/mapper/vroot`.
+- First attempt: `EXT4-fs (dm-0): bad block size 1024`. ST's rootfs ext4 has 1 KB blocks
+  (`mke2fs` picks them below 512 MB), and dm-verity's default 4 KB data blocks make a device that
+  a 1 KB filesystem cannot sit on. For the hand test `--data-block-size=1024`; for the build the
+  ext4 will get 4 KB blocks.
+- Tamper test: one byte changed directly on the partition (`ID=` → `XD=` in `os-release`).
+  Reading the file through dm-verity gave `Input/output error` and
+  `verity: data block 119175 is corrupted`, the block `debugfs bmap` had shown on the PC. ext4
+  also could not do its orphan cleanup any more: `write access unavailable`.
+
 ### Other things learned along the way
 
 - `Ctrl-Z` pauses a command instead of cancelling it. A paused `devtool build` kept
@@ -778,7 +798,8 @@ Planned, in this order:
    - [x] Tamper test for a signed TF-A: the open chip's boot ROM checks only the checksum
    - [x] Document the development settings (OP-TEE provisioning driver, open debug access)
    - [x] Read-only rootfs (`read-only-rootfs`, `ro` from U-Boot)
-   - [ ] dm-verity for the rootfs slots
+   - [x] dm-verity by hand: hash tree on the PC, tamper test on the board
+   - [ ] dm-verity in the build: per-slot boot partition, FIT with the root hash, RAUC slot group
    - [ ] Last, after all other lessons: key hash into the OTP fuses (irreversible)
 5. **Connectivity and comparison**
    - [ ] WiFi: chip firmware, `wpa_supplicant`, systemd-networkd config, credentials kept out of

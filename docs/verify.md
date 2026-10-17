@@ -244,6 +244,8 @@ PC$ ls tmp/work/*/<recipe>/*/temp/
 | RAUC waits for `/data`? | `systemctl show rauc -p RequiresMountsFor` | `/run/rauc/mnt /data` |
 | Rootfs read-only from the start? | `cat /proc/cmdline`, `dmesg \| grep p1[01]` | `rootwait ro`; `mounted filesystem ... ro`, no `re-mounted ... ro` (since step 15c) |
 | Who writes into `/var/lib`? | `ls -la /var/volatile/lib` | only what this boot wrote (overlay upper layer in RAM, since step 15b) |
+| dm-verity device | `veritysetup status <name>`, `dmesg \| grep verity` | `status: verified`, the root hash you passed; `data block ... is corrupted` if a block was changed |
+| ext4 block size of an image (PC) | `dumpe2fs -h <image> \| grep "Block size"` | must be ≥ the dm-verity data block size |
 | RAUC slot status | `cat /data/rauc/central.raucs` | a `[slot.rootfs.N]` section per installed slot, `bundle.version`, `sha256` of the rootfs image |
 | Secure boot state | first console lines after power-on | `TRUSTED_BOARD_BOOT support enabled`, `ROTPK is not deployed ...` on an open chip |
 

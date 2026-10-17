@@ -1,4 +1,4 @@
-# 15 Read-only rootfs (preparation for dm-verity)
+# 15 Read-only rootfs and dm-verity
 
 **Goal:** the root filesystem is never written on the board, from the first moment of boot.
 dm-verity (next part) checks every block of the slot against a hash, which only works if the
@@ -205,7 +205,149 @@ mount | grep " / "
 writable boot. ext4 cleans them up even on a read-only mount, by writing to the device. With
 dm-verity the device itself cannot be written.
 
+## 15d dm-verity by hand (version 1.8)
+
+**Goal:** see dm-verity work before building it into the image. Compute the hash tree on the PC,
+write image + tree into the slot that is not running, open it through dm-verity on the board,
+then change one byte.
+
+### How dm-verity works
+```
+build time:  ext4 image ──► sha256 of every data block ──► hash tree ──► one ROOT HASH (32 bytes)
+                                                           (appended after the data)
+
+ partition:  [ ext4 data .................... | superblock | hash tree ]
+                                                 4 KB: block sizes, salt, algorithm
+
+read time:              root hash (given by you, later by the signed FIT)
+                             ▲ sha256(top hash block) == root hash?
+                        [ top hash block ]
+                             ▲ sha256(lower hash block) == entry above?
+                        [ lower hash block ]
+                             ▲ sha256(data block) == entry above?
+                        [ data block ]  → equal: data to ext4; different: I/O error
+```
+- `veritysetup open` checks nothing yet. It creates `/dev/mapper/<name>`, a block device on top of
+  the partition. Every block read through it is checked, as long as it is open, not only at boot.
+  Checked hash blocks stay in RAM, so later reads only hash the data block.
+- The hash tree is on the SD card too. Someone who changes data **and** tree still cannot match
+  the root hash, which is not on the SD card.
+
+### Step 1: `veritysetup` on the board
+Add `cryptsetup` (contains `veritysetup`, needs `libdevmapper`) to `IMAGE_INSTALL` in
+`my-image.bb`, `DISTRO_VERSION = "1.8"`, install the bundle. The kernel has dm-verity since
+step 12a (`rauc.cfg`). After this you run from slot A, and B is free for the test.
+
+On the board:
+```
+cat /proc/cmdline
+veritysetup --version
+```
+**Expected:** `rauc.slot=A`, `veritysetup 2.7.5`.
+
+### Step 2: hash tree on the PC
+On the PC, in `build-stm32mp`:
+```
+bitbake cryptsetup-native -c addto_recipe_sysroot
+D=tmp/deploy/images/stm32mp25-disco
+mkdir -p ~/verity-test
+cp -L $D/my-image-stm32mp25-disco.splitted-rootfs.ext4 ~/verity-test/rootfs.img
+SIZE=$(stat -c %s ~/verity-test/rootfs.img)
+echo $SIZE $((SIZE / 1024))
+dumpe2fs -h ~/verity-test/rootfs.img | grep "Block size"
+```
+**Expected:** `213667840 208660` and `Block size: 1024`. `mke2fs` uses 1 KB blocks for
+"small" filesystems (below 512 MB), and the dm-verity data block size must not be bigger than
+the ext4 block size (see below). Use your own numbers in the next command:
+```
+oe-run-native cryptsetup-native veritysetup format --data-block-size=1024 --data-blocks=208660 --hash-offset=213667840 ~/verity-test/rootfs.img ~/verity-test/rootfs.img | tee ~/verity-test/verity.txt
+ls -l ~/verity-test/rootfs.img
+oe-run-native cryptsetup-native veritysetup verify --data-block-size=1024 --data-blocks=208660 --hash-offset=213667840 ~/verity-test/rootfs.img ~/verity-test/rootfs.img <ROOT HASH>
+echo "exit: $?"
+debugfs -R "bmap /usr/lib/os-release 0" ~/verity-test/rootfs.img
+```
+**Expected:**
+- `Data block size: 1024`, `Hash blocks: 1645`, `Root hash: <64 hex characters>`
+- the file grew by 1646 × 4 KB (6.7 MB): the hash blocks and the superblock
+- `verify` prints nothing, `exit: 0`
+- `bmap`: `119175`, the ext4 block of `os-release`; with 1 KB blocks, byte 122035200
+
+Copy `rootfs.img` to the USB stick.
+
+### Step 3: open it on the board
+Check that partition 11 is `rootfs2` and that you run from A.
+
+On the board:
+```
+P=$(readlink -f /dev/disk/by-path/platform-42080000.bus-amba-48220000.mmc-part11)
+cat /sys/class/block/$(basename $P)/uevent | grep PARTNAME
+cat /proc/cmdline
+```
+**Expected:** `PARTNAME=rootfs2`, `rauc.slot=A`. Only then:
+```
+mkdir -p /run/usb /run/vroot
+mount /dev/sda1 /run/usb
+dd if=/run/usb/rootfs.img of=/dev/disk/by-path/platform-42080000.bus-amba-48220000.mmc-part11 bs=4096
+sync
+cmp /run/usb/rootfs.img /dev/disk/by-path/platform-42080000.bus-amba-48220000.mmc-part11
+umount /run/usb
+V=/dev/disk/by-path/platform-42080000.bus-amba-48220000.mmc-part11
+veritysetup open --hash-offset=213667840 $V vroot $V <ROOT HASH>
+veritysetup status vroot
+mount -o ro /dev/mapper/vroot /run/vroot
+head -n 3 /run/vroot/usr/lib/os-release
+umount /run/vroot
+veritysetup close vroot
+```
+`veritysetup open <data device> <name> <hash device> <root hash>`: data and tree are on the same
+partition, so `$V` appears twice; `--hash-offset` says where the tree starts.
+
+**Expected:**
+- `cmp: EOF on /run/usb/rootfs.img`
+- `status: verified`, `data block: 1024`, `size: 417320 sectors`,
+  `hash offset: 417328 sectors` (data + the 4 KB superblock)
+- `EXT4-fs (dm-0): write access unavailable, skipping orphan cleanup`: the dm-verity device
+  cannot be written at all, not even by ext4 (compare 15c, where a read-only mount still wrote)
+- `head`: `ID=mydistro`, `NAME="My Learning Distro"`, `VERSION="1.8 (learning)"`
+
+### Step 4: change one byte, past dm-verity
+This is what someone with the SD card in a PC, or root on the board, could do: write to the
+partition directly.
+
+On the board:
+```
+dd if=$V bs=1 skip=122035200 count=11 2>/dev/null; echo
+printf 'X' | dd of=$V bs=1 seek=122035200 count=1
+sync
+dd if=$V bs=1 skip=122035200 count=11 2>/dev/null; echo
+```
+**Expected:** `ID=mydistro`, then `XD=mydistro`. Stop if the first line is something else.
+
+### Step 5: read it again through dm-verity
+```
+veritysetup open --hash-offset=213667840 $V vroot $V <ROOT HASH>
+mount -o ro /dev/mapper/vroot /run/vroot
+head -n 3 /run/vroot/usr/lib/os-release
+dmesg | grep -i verity | tail -n 3
+umount /run/vroot
+veritysetup close vroot
+```
+**Expected:**
+```
+device-mapper: verity: 179:43: data block 119175 is corrupted
+head: /run/vroot/usr/lib/os-release: Input/output error
+```
+`open` and `mount` still work: dm-verity refuses only the changed block, when it is read.
+`179:43` is the partition's device number (`ls -l /dev/mmcblk0p11`). The message comes twice
+because the kernel retries the read.
+
+Slot B now has a changed byte. Do not boot it; the next RAUC install overwrites it.
+
 ## Errors you may see
+- `EXT4-fs (dm-0): bad block size 1024` when mounting `/dev/mapper/...`: the ext4 uses 1 KB
+  blocks, and dm-verity was formatted with its default 4 KB data blocks. A filesystem cannot use
+  blocks smaller than its device's. Use `--data-block-size=1024`, or build the ext4 with 4 KB
+  blocks.
 - `mount: /mnt/usb: mount point does not exist`: `/mnt/usb` was created by hand in another slot,
   and `mkdir` fails on a read-only `/`. Use `/run/usb`.
 - `FAT-fs (sda1): Volume was not properly unmounted`: the stick was pulled without `umount`.

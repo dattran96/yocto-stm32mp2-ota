@@ -15,6 +15,7 @@ IMAGE_INSTALL = " \
     mymod \
     rauc \
     data-journal \
+    cryptsetup \
 "
 
 IMAGE_FEATURES += "ssh-server-dropbear"
