@@ -634,6 +634,13 @@ guide with diagrams: [docs/13-secure-boot.md](docs/13-secure-boot.md).
 - Practical notes: BusyBox `dd` has no `conv=` (use `sync` afterwards), BusyBox `blkid` shows
   nothing for a partition without a filesystem; `/sys/class/block/<dev>/uevent` shows `PARTNAME`.
 
+- OP-TEE's boot warnings (`might be insecure`, `insecure stm32mp_provisioning driver`,
+  `All debug access are allowed`) come from development settings: `CFG_INSECURE` is OP-TEE's
+  default, the provisioning driver writes OTP 124 (HCONF1, watchdog settings) into its shadow
+  register at every boot instead of a fused value, and an open chip always opens JTAG/SWD.
+  They are not part of the chain of trust; debug access can only be locked by closing the chip
+  (details in the guide).
+
 **13c: Boot logic inside U-Boot, locked environment**
 - Two inputs of U-Boot were not verified at all: `boot.scr` in `bootfs`, and the environment in
   `u-boot-env`. Demonstrated the second from Linux:
@@ -695,7 +702,7 @@ Planned, in this order:
    - [x] Document the chain of trust: ROM → TF-A → FIP → signed FIT → signed RAUC bundles
    - [x] A/B boot logic inside U-Boot, environment locked to RAUC's variables
    - [x] Tamper test for a signed TF-A: the open chip's boot ROM checks only the checksum
-   - [ ] Remove development settings (open debug access, OP-TEE test provisioning driver)
+   - [x] Document the development settings (OP-TEE provisioning driver, open debug access)
    - [ ] Read-only rootfs with dm-verity (after the data partition from item 2)
    - [ ] Last, after all other lessons: key hash into the OTP fuses (irreversible)
 5. **Connectivity and comparison**

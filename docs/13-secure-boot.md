@@ -288,6 +288,24 @@ the environment in `u-boot-env`.
 3. `rauc status mark-active other`, reboot. **Expected:** `Booting slot B (rootfs2) …`: the RAUC
    variables are still accepted.
 
+## Known development settings
+
+OP-TEE prints three warnings at boot. They are not part of the chain of trust (which stage checks
+which), but a product changes them. What they mean, from OP-TEE's source
+(`core/arch/arm/plat-stm32mp2/`, `core/drivers/`):
+
+| Warning | Cause | What a product does |
+|---|---|---|
+| `This OP-TEE configuration might be insecure!` | `CFG_INSECURE=y`, OP-TEE's own default, also forced by ST's provisioning driver | builds with `CFG_INSECURE=n`: then wrong firewall (RIFSC/ETZPC) or GPIO security settings make OP-TEE panic instead of warn |
+| `Embeds insecure stm32mp_provisioning driver`, `Override the OTP 124: 0 to 0x18db6` | `CFG_STM32MP_PROVISIONING=y` writes a value from the device tree into the **shadow register** of OTP word 124 (HCONF1, watchdog settings) at every boot; no fuse is burned | burns HCONF1 into the fuses once in production and builds with `CFG_STM32MP_PROVISIONING=n` |
+| `All debug access are allowed` | on every chip that is not closed, OP-TEE opens JTAG/SWD debug access; `CFG_INSECURE` only decides whether it prints this | closes the chip: only that locks debug access. With debug access, someone with physical access can read memory and bypass every check. |
+
+One more, without a warning: OP-TEE signs Trusted Applications with `keys/default_ta.pem`, a key that
+is public in OP-TEE's repository. A product that uses TAs sets its own `TA_SIGN_KEY`.
+
+Only the debug access matters for this board, and it can be locked only together with the fuses,
+which come last.
+
 ## Errors you may see
 - The environment is saved twice on every boot: ST's `env_check` (in `bootcmd_stm32mp`) saves it
   whenever U-Boot reports the default environment, and with the writeable list it did so on every
