@@ -52,7 +52,7 @@ systemd). It contains:
 | `recipes-crypto/cryptsetup/` | Removes cryptsetup's `udev` and `ssh-token` options, which pulled 5 MB into the initramfs |
 | `recipes-core/bundles/my-bundle.bb` | A signed RAUC update bundle (`verity` format) with the rootfs of `my-image` |
 | `recipes-kernel/mymod/` | An out-of-tree kernel module (`inherit module`) with a parameter, loaded automatically at boot |
-| `recipes-kernel/linux/` | `.bbappend`s for `linux-yocto` (QEMU) and `linux-stm32mp` (ST board) that add the same kernel config fragment (exFAT as a module), plus the kernel options RAUC needs for the ST kernel |
+| `recipes-kernel/linux/` | `.bbappend`s for `linux-yocto` (QEMU) and `linux-stm32mp` (ST board) that add the same kernel config fragment (exFAT as a module), plus the kernel options RAUC needs for the ST kernel, and a second signed FIT with the dm-verity initramfs |
 | `sdk-example/` | A program cross-compiled outside BitBake with the SDK generated from `my-image` |
 | `docs/` | Follow-along guides for each lesson, and a cheat sheet for checking build results |
 
@@ -813,6 +813,20 @@ signed together with the kernel. Follow-along guide:
 - U-Boot's `usb start` did not find the stick (`EHCI timed out on TD`) until it was plugged into
   the other port and `usb reset` ran once or twice.
 
+**16e: the initramfs inside the signed FIT**
+- `INITRAMFS_IMAGE = "my-initramfs"` in the kernel bbappend: poky's `kernel-fitimage.bbclass`
+  builds a second FIT with kernel, DTB and initramfs, and signs all three per configuration
+  (`sign-images = "kernel", "fdt", "ramdisk"`). No own FIT recipe is needed, and there is no
+  dependency loop: `my-image` only needs the kernel packages, the second FIT is assembled later,
+  before `do_deploy`.
+- Checked on the PC with `dumpimage`: the `ramdisk-1` hash in the FIT is the `sha256sum` of the
+  initramfs, and that initramfs holds the root hash of the current `my-image`.
+- Three boots from the U-Boot prompt, all with this one FIT from the stick: with the old image in
+  slot B, the initramfs refused it (`metadata block 51524 is corrupted`: the whole hash tree
+  belongs to another build); with the new image it booted; with one byte of the initramfs changed
+  inside the FIT, U-Boot refused it (`Bad Data Hash`) and Linux never started. The signature itself
+  stayed `OK`: it covers the list of hashes, and the stored hash was unchanged.
+
 ### Other things learned along the way
 
 - `Ctrl-Z` pauses a command instead of cancelling it. A paused `devtool build` kept
@@ -857,7 +871,8 @@ Planned, in this order:
    - [x] dm-verity by hand: hash tree on the PC, tamper test on the board
    - [x] dm-verity in the build: hash tree and root hash next to the rootfs image
    - [x] Initramfs that opens the rootfs slot with dm-verity; boot and tamper test by hand
-   - [ ] Initramfs inside the signed FIT, one boot partition per slot, RAUC slot group
+   - [x] Initramfs inside the signed FIT (kernel, DTB and root hash under one signature)
+   - [ ] One boot partition per slot for the FIT, RAUC slot group, full flash
    - [ ] Last, after all other lessons: key hash into the OTP fuses (irreversible)
 5. **Connectivity and comparison**
    - [ ] WiFi: chip firmware, `wpa_supplicant`, systemd-networkd config, credentials kept out of

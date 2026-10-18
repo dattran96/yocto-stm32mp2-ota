@@ -238,6 +238,18 @@ cut -d" " -f1 $D/my-initramfs-stm32mp25-disco.manifest | tr '\n' ' '; echo
   `VERITY_ROOT_HASH` inside is the one of `my-image`; no `systemd` or `udev` in the manifest.
 - `cpio -t` and `--to-stdout` only read the archive; nothing is written to disk.
 
+## FIT with the initramfs (since step 16e)
+
+```
+F=$(ls $D/kernel/fitImage-my-initramfs-*.bin | head -1)
+oe-run-native u-boot-tools-native dumpimage -l $F | grep -E "Type|Hash value|Sign algo|Ramdisk"
+sha256sum $D/my-initramfs-stm32mp25-disco.cpio.gz
+```
+- **Expected:** a `RAMDisk Image` next to kernel and DTBs; every configuration has
+  `Init Ramdisk: ramdisk-1` and `Sign algo: sha256,rsa2048:fitconf`; the ramdisk `Hash value` is
+  the `sha256sum` of the initramfs.
+- `dumpimage` needs `bitbake u-boot-tools-native -c addto_recipe_sysroot` once.
+
 ## Logs when a task fails
 
 ```

@@ -11,3 +11,7 @@ KERNEL_CONFIG_FRAGMENTS:append = " ${@bb.utils.contains('DISTRO_FEATURES', 'rauc
 
 SRC_URI += "file://localversion.cfg"
 KERNEL_CONFIG_FRAGMENTS:append = " ${WORKDIR}/localversion.cfg"
+# Build a second FIT with the initramfs from my-initramfs (dm-verity root
+# hash inside), signed together with kernel and DTB. Deployed as
+# kernel/fitImage-my-initramfs-*; the FIT in /boot stays without it.
+INITRAMFS_IMAGE = "my-initramfs"

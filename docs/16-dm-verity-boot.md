@@ -13,8 +13,8 @@ Board build only (`build-stm32mp`). The parts:
 | 16b | Own initramfs module: open the slot with dm-verity, root hash built in | done |
 | 16c | Boot test by hand from the U-Boot prompt | done |
 | 16d | Tamper test: the initramfs refuses a changed slot | done |
-| 16e | FIT with kernel, DTB and initramfs, signed together | next |
-| 16f | One boot partition per slot, RAUC slot group, full flash | |
+| 16e | FIT with kernel, DTB and initramfs, signed together | done |
+| 16f | One boot partition per slot, RAUC slot group, full flash | next |
 
 ## Background
 
@@ -300,6 +300,137 @@ dd if=$V bs=1 skip=1144 count=6 2>/dev/null; echo
 ```
 **Expected:** `rootfs`.
 
+## 16e The initramfs inside the signed FIT
+
+In 16c the initramfs came from the stick as a separate, unsigned file. Now it goes into the FIT,
+so U-Boot checks it with the `fitconf` key, like the kernel:
+```
+fitImage-my-initramfs (signed with fitconf)
+ ├─ kernel
+ ├─ DTB
+ └─ initramfs
+      └─ /etc/verity-params   root hash
+```
+
+Poky's `kernel-fitimage.bbclass` does this when the kernel recipe sets `INITRAMFS_IMAGE`. In
+[`linux-stm32mp_%.bbappend`](../recipes-kernel/linux/linux-stm32mp_%25.bbappend):
+```
+INITRAMFS_IMAGE = "my-initramfs"
+```
+- The class builds a second FIT in its own task, `do_assemble_fitimage_initramfs`, which waits for
+  `my-initramfs:do_image_complete`. The first FIT (without initramfs) stays as it is and still
+  goes into `/boot` of the rootfs.
+- With a ramdisk, every configuration gets `sign-images = "kernel", "fdt", "ramdisk"`
+  (`kernel-fitimage.bbclass`), so the signature covers the initramfs.
+- No dependency loop: `my-image` needs only the kernel packages (`do_package_write_rpm`), and
+  `do_assemble_fitimage_initramfs` runs after `do_install`, before `do_deploy`. So BitBake builds
+  kernel packages → `my-image` → root hash → `my-initramfs` → second FIT.
+- The kernel is rebuilt once (`INITRAMFS_IMAGE` is part of its tasks). That changes the kernel
+  modules in `my-image`, so its root hash changes too, and the new initramfs gets the new one.
+
+On the PC, in `build-stm32mp`:
+```
+bitbake linux-stm32mp
+D=tmp/deploy/images/stm32mp25-disco
+ls -lL $D/kernel/ | grep -i initramfs
+bitbake u-boot-tools-native -c addto_recipe_sysroot
+F=$(ls $D/kernel/fitImage-my-initramfs-*.bin | head -1); echo $F
+oe-run-native u-boot-tools-native dumpimage -l $F | grep -E "Image [0-9]|Type|Hash value|Sign algo|Configuration|Ramdisk"
+sha256sum $D/my-initramfs-stm32mp25-disco.cpio.gz
+```
+**Expected:**
+- `fitImage-my-initramfs-stm32mp25-disco-stm32mp25-disco` (link) and the `.bin`, 17017414 bytes
+  for me (11.6 MB FIT + 5.3 MB initramfs), plus the `.its`
+- `dumpimage`: `Kernel Image`, three `Flat Device Tree` (ST's DTBs), `RAMDisk Image`; every
+  configuration has `Init Ramdisk: ramdisk-1` and `Sign algo: sha256,rsa2048:fitconf`
+- the `Hash value` of `ramdisk-1` is the `sha256sum` of the `.cpio.gz`
+
+Copy to the USB stick (`U` = where the stick is mounted on the PC, see
+`lsblk -o NAME,SIZE,FSTYPE,MOUNTPOINT`), with a short name for typing in U-Boot:
+```
+U=/media/dat/XXXX-XXXX
+cp -L $D/kernel/fitImage-my-initramfs-stm32mp25-disco-stm32mp25-disco $U/fit-initramfs.itb
+cp -L $D/my-image-stm32mp25-disco.splitted-rootfs.ext4.verity $U/
+sync
+umount $U
+```
+
+### Three boot tests
+The kernel, DTB and initramfs all come from `fit-initramfs.itb` on the stick; only the rootfs
+comes from slot B. Slot A is only the fallback.
+
+| Test | Slot B | Expected |
+|---|---|---|
+| A | the old image from 16c | U-Boot accepts the FIT; the initramfs refuses the slot |
+| B | the new `.verity` image | boots, `/` through dm-verity |
+| C | new image, but one byte of the initramfs in the FIT changed | U-Boot refuses the FIT |
+
+At the U-Boot prompt, for all three (`fit-bad.itb` instead of `fit-initramfs.itb` in test C):
+```
+usb reset
+load usb 0:1 ${kernel_addr_r} fit-initramfs.itb
+part number mmc ${boot_instance} rootfs2 bpart
+part uuid mmc ${boot_instance}:${bpart} rootuuid
+setenv bootargs "root=PARTUUID=${rootuuid} rootwait ro earlycon console=${console},${baudrate} rauc.slot=B"
+bootm ${kernel_addr_r}
+```
+`bootm` gets only the FIT; U-Boot takes the initramfs from the configuration.
+
+**Test A, expected** (slot B still has the image of 16c):
+```
+## Loading ramdisk from FIT Image at 8a000000 ...
+   Verifying Hash Integrity ... sha256,rsa2048:fitconf+ OK
+   Trying 'ramdisk-1' ramdisk subimage
+   Verifying Hash Integrity ... sha256+ OK
+...
+verity: rootfs /dev/mmcblk0p11, root hash f31f09dc...
+device-mapper: verity: 179:43: metadata block 51524 is corrupted
+EXT4-fs (dm-0): unable to read superblock
+verity: mount of /dev/mapper/vroot failed, rebooting
+```
+In 16d one data block was changed, and the tree still matched the root hash: `data block 0 is
+corrupted`. Here the whole tree belongs to another build, so the first check, top tree block
+against root hash, fails: `metadata block 51524` is the start of the tree, right after the
+51524 data blocks.
+
+**Test B:** write the new image to slot B as in 16c (`PARTNAME=rootfs2` check, `dd`, `cmp`),
+then boot. **Expected:** `verity: rootfs /dev/mmcblk2p11, root hash f31f09dc...`,
+`EXT4-fs (dm-0): mounted filesystem ... ro`, login on slot B.
+
+**Test C:** on the PC, change one byte in the middle of the initramfs in a copy of the FIT. The
+offset is where the `.cpio.gz` starts inside the FIT (11658836 for me) plus half its size. The
+offset differs for every build; find it with:
+```
+python3 -I -c "import sys; f=open(sys.argv[1],'rb').read(); r=open(sys.argv[2],'rb').read(); i=f.find(r); print(i, i+len(r)//2)" $U/fit-initramfs.itb $D/my-initramfs-stm32mp25-disco.cpio.gz
+```
+With my numbers (byte `2a` at 14336376):
+```
+cp $U/fit-initramfs.itb $U/fit-bad.itb
+dd if=$U/fit-bad.itb bs=1 skip=14336376 count=1 2>/dev/null | xxd -p
+printf '\x2b' | dd of=$U/fit-bad.itb bs=1 seek=14336376 count=1 conv=notrunc
+cmp -l $U/fit-initramfs.itb $U/fit-bad.itb
+```
+**Expected:** `2a`; one `cmp` line `14336377  52  53` (counted from 1, octal). `conv=notrunc`
+keeps the rest of the file.
+
+Boot `fit-bad.itb`. **Expected:**
+```
+## Loading ramdisk from FIT Image at 8a000000 ...
+   Verifying Hash Integrity ... sha256,rsa2048:fitconf+ OK
+   Trying 'ramdisk-1' ramdisk subimage
+     Data Start:   0x8ab1e654
+     Hash value:   3d1e398b...
+   Verifying Hash Integrity ... sha256 error!
+Bad hash value for 'hash-1' hash node in 'ramdisk-1' image node
+Bad Data Hash
+Ramdisk image is corrupt or invalid
+STM32MP>
+```
+The kernel does not start. `Data Start` minus the load address `0x8a000000` is `0xB1E654` =
+11658836, the offset found on the PC. The signature is still `OK`: it covers the configuration,
+which lists the hashes of kernel, DTB and initramfs. The stored hash is unchanged, the data is
+not. Changing the stored hash as well would break the signature. `boot` then starts slot A.
+
 ## Errors you may see
 - `usb start` in U-Boot: `EHCI timed out on TD`, `0 Storage Device(s) found`. The stick works in
   Linux but not at once in U-Boot. Plugging it into the other USB-A port and `usb reset` (once or
@@ -308,5 +439,7 @@ dd if=$V bs=1 skip=1144 count=6 2>/dev/null; echo
 - Several lines pasted at once into the serial console arrive mixed up. Paste one line at a time.
 - The initramfs grows to 10 MB: cryptsetup's `udev` and `ssh-token` options and recommended
   packages; see [16a](#size).
+- `metadata block ... is corrupted` instead of `data block ...`: the hash tree on the partition
+  belongs to another build than the root hash (see test A in 16e).
 - `Bootstage space exhasuted` in U-Boot before `Starting kernel`: U-Boot's boot-time statistics
   table is full. Harmless.
