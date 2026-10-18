@@ -343,7 +343,92 @@ because the kernel retries the read.
 
 Slot B now has a changed byte. Do not boot it; the next RAUC install overwrites it.
 
+## 15e Hash tree and root hash in the build
+
+The same as step 2 of 15d, but done by BitBake. Nothing changes on the board yet: the RAUC
+bundle still contains the plain `.ext4`.
+```
+my-image-stm32mp25-disco.splitted-rootfs.ext4          ext4 with 4 KB blocks (as before)
+        │  copy + veritysetup format --no-superblock
+        ▼
+...splitted-rootfs.ext4.verity                         ext4 | hash tree
+...splitted-rootfs.ext4.verity-params                  VERITY_ROOT_HASH=..., VERITY_SALT=...
+```
+
+meta-oe has a class for this, `image_types_verity.bbclass`. By default it takes the `.ext4` that
+poky builds from the whole rootfs. Here it has to take ST's split rootfs (without `/boot`,
+`/usr/local`, `/vendor`), which the image type `stsplitpartitions` makes.
+
+1. Make an own salt (a random value mixed into every hash; it is not secret). On the PC:
+   ```
+   dd if=/dev/random bs=1k count=1 2>/dev/null | sha256sum
+   ```
+   Copy the 64 hex characters, without the ` -`.
+2. At the end of [`my-image.bb`](../recipes-core/images/my-image.bb):
+   ```
+   inherit image_types_verity
+   IMAGE_FSTYPES:append:stm32mpcommon = " verity"
+   VERITY_IMAGE_FSTYPE:stm32mpcommon = "stsplitpartitions"
+   VERITY_INPUT_IMAGE:stm32mpcommon = "${IMGDEPLOYDIR}/${IMAGE_BASENAME}${IMAGE_MACHINE_SUFFIX}.splitted-rootfs.ext4"
+   VERITY_SALT = "<your 64 hex characters>"
+   EXTRA_IMAGECMD:ext4:append = " -b 4096"
+   ```
+   - `VERITY_IMAGE_FSTYPE` makes the class run its task `do_image_verity` after
+     `do_image_stsplitpartitions`.
+   - `VERITY_INPUT_IMAGE` is the file it reads. ST names its split files without poky's
+     `.rootfs` suffix, so `${IMAGE_LINK_NAME}` does not work here.
+   - `-b 4096`: 4 KB ext4 blocks, so they fit dm-verity's 4 KB data blocks (the class uses
+     `VERITY_BLOCK_SIZE`, default 4096, for data and hash blocks). ST passes the same options to
+     every partition image, so bootfs and userfs get 4 KB blocks too.
+
+On the PC, in `build-stm32mp`:
+```
+bitbake my-image
+D=tmp/deploy/images/stm32mp25-disco
+ls -lL $D/my-image-stm32mp25-disco.splitted-rootfs.ext4*
+dumpe2fs -h $D/my-image-stm32mp25-disco.splitted-rootfs.ext4 2>/dev/null | grep "Block size"
+cat $D/my-image-stm32mp25-disco.splitted-rootfs.ext4.verity-params; echo
+```
+**Expected:**
+- four files: `.ext4` (213667840 bytes for me), `.ext4.verity` (215359488),
+  `.verity-info` (the output of `veritysetup format`) and `.verity-params`
+- `Block size: 4096`
+- `VERITY_DATA_BLOCKS=52165`, `VERITY_HASH_BLOCKS=413`, `VERITY_SALT=` your salt,
+  `VERITY_ROOT_HASH=...`, `VERITY_DATA_SECTORS=417320`
+
+The numbers fit: 52165 × 4096 = 213667840 (the `.ext4`), plus 413 × 4096 for the tree =
+215359488 (the `.verity`), and 213667840 / 512 = 417320 sectors. The tree is less than 1 % of
+the image. With 1 KB blocks in 15d it had 1645 blocks.
+
+The `.verity-params` file has no newline at the end, hence the `echo`.
+
+### Check the root hash on the PC
+`veritysetup verify` reads every block and compares it with the tree and the root hash, like the
+kernel does on the board, but in user space: no root, nothing is mounted.
+```
+. $D/my-image-stm32mp25-disco.splitted-rootfs.ext4.verity-params
+F=$D/my-image-stm32mp25-disco.splitted-rootfs.ext4.verity
+veritysetup verify --no-superblock --salt=$VERITY_SALT --data-blocks=$VERITY_DATA_BLOCKS --hash-offset=213667840 $F $F $VERITY_ROOT_HASH && echo OK
+```
+The first line loads the `VERITY_*` lines as shell variables. `--hash-offset` is the size of the
+`.ext4`: the tree starts right after the data, with no superblock in between
+(`--no-superblock`), so every parameter has to be passed.
+
+**Expected:** `OK`.
+
+Now with a wrong root hash (the last character replaced by `3`):
+```
+veritysetup verify --no-superblock --salt=$VERITY_SALT --data-blocks=$VERITY_DATA_BLOCKS --hash-offset=213667840 $F $F ${VERITY_ROOT_HASH%?}3 && echo OK
+```
+**Expected:** `Verification of root hash failed.` (German: `Fehler beim Verifizieren des
+Root-Hashes.`), no `OK`. If your root hash already ends in `3`, use another character.
+
 ## Errors you may see
+- `do_image_verity: FileNotFoundError: ... my-image-stm32mp25-disco.rootfs.splitted-rootfs.ext4`:
+  `VERITY_INPUT_IMAGE` was built from `${IMAGE_LINK_NAME}`, which has poky's `.rootfs` suffix.
+  Use `${IMAGE_BASENAME}${IMAGE_MACHINE_SUFFIX}`, as ST does.
+- `do_image_verity: ['veritysetup', 'format', ...] returned with 1 (b'')`: look at `--salt=` in
+  the command. The salt must be hex; a placeholder text fails without any message.
 - `EXT4-fs (dm-0): bad block size 1024` when mounting `/dev/mapper/...`: the ext4 uses 1 KB
   blocks, and dm-verity was formatted with its default 4 KB data blocks. A filesystem cannot use
   blocks smaller than its device's. Use `--data-block-size=1024`, or build the ext4 with 4 KB

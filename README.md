@@ -757,6 +757,22 @@ against a hash. Follow-along guide: [docs/15-read-only-rootfs.md](docs/15-read-o
   `verity: data block 119175 is corrupted`, the block `debugfs bmap` had shown on the PC. ext4
   also could not do its orphan cleanup any more: `write access unavailable`.
 
+**15e: hash tree and root hash in the build**
+- meta-oe's `image_types_verity.bbclass` copies an image and appends the hash tree
+  (`veritysetup format --no-superblock`), and writes the root hash and all parameters to
+  `.verity-params`. In `my-image.bb` it now reads ST's split rootfs: `VERITY_IMAGE_FSTYPE =
+  "stsplitpartitions"` runs it after ST's task. The ext4 gets 4 KB blocks (`EXTRA_IMAGECMD:ext4`
+  `-b 4096`); ST passes the same options to all its partition images.
+- First error: `FileNotFoundError` for `...stm32mp25-disco.rootfs.splitted-rootfs.ext4`.
+  `${IMAGE_LINK_NAME}` has poky's `.rootfs` suffix, ST's split files do not; the path now uses
+  `${IMAGE_BASENAME}${IMAGE_MACHINE_SUFFIX}`, like ST.
+- Second error: `veritysetup format` exited with 1 and no message. The salt was still a
+  placeholder text; it must be hex. Now an own random salt replaces the class default (the class
+  warns about the default).
+- `veritysetup verify` on the PC checks the result in user space: `OK` with the root hash from
+  `.verity-params`, `Verification of root hash failed` with one character changed.
+- The tree is 413 blocks of 4 KB for 52165 data blocks, less than 1 % of the image.
+
 ### Other things learned along the way
 
 - `Ctrl-Z` pauses a command instead of cancelling it. A paused `devtool build` kept

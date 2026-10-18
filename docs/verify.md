@@ -215,6 +215,18 @@ PC$ oe-run-native rauc-native rauc info --keyring=../../meta-mylayer/recipes-cor
   - `Certificate Chain`: the signing certificate `Development-1`, issued by `rauc CA Development`
 - This is the same check the board does before it installs anything.
 
+## dm-verity image (since step 15e)
+
+```
+. $D/my-image-stm32mp25-disco.splitted-rootfs.ext4.verity-params
+F=$D/my-image-stm32mp25-disco.splitted-rootfs.ext4.verity
+veritysetup verify --no-superblock --salt=$VERITY_SALT --data-blocks=$VERITY_DATA_BLOCKS --hash-offset=$((VERITY_DATA_SECTORS * 512)) $F $F $VERITY_ROOT_HASH && echo OK
+```
+- **Expected:** `OK`. A wrong root hash gives `Verification of root hash failed.`
+- `.verity` = the `.ext4` plus the hash tree; the tree starts at the `.ext4`'s size
+  (`VERITY_DATA_SECTORS` × 512).
+- `dumpe2fs -h $D/my-image-stm32mp25-disco.splitted-rootfs.ext4 | grep "Block size"`: `4096`.
+
 ## Logs when a task fails
 
 ```

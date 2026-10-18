@@ -27,3 +27,15 @@ IMAGE_FEATURES += "read-only-rootfs"
 # Same as ST's default in st-machine-image-partition-stm32mp.inc,
 # but with copy = 2. Ignored on machines without ST's flash layout class.
 PARTITIONS_IMAGES[rootfs] = "${STM32MP_ROOTFS_IMAGE},${STM32MP_ROOTFS_LABEL},,${STM32MP_ROOTFS_SIZE},FileSystem,2"
+
+# dm-verity: append a hash tree to ST's split rootfs image and write the
+# root hash to .verity-params (meta-oe image_types_verity.bbclass).
+# The hash is checked in 4 KB blocks, so the ext4 needs 4 KB blocks too
+# (mke2fs picks 1 KB below 512 MB). ST uses the same options for every
+# partition image, so bootfs and userfs get 4 KB blocks as well.
+inherit image_types_verity
+IMAGE_FSTYPES:append:stm32mpcommon = " verity"
+VERITY_IMAGE_FSTYPE:stm32mpcommon = "stsplitpartitions"
+VERITY_INPUT_IMAGE:stm32mpcommon = "${IMGDEPLOYDIR}/${IMAGE_BASENAME}${IMAGE_MACHINE_SUFFIX}.splitted-rootfs.ext4"
+VERITY_SALT = "b5e06473a0642a14a6c7ab46e9fb3f5ae4617ef372d3f008a71fa143d683bcc5"
+EXTRA_IMAGECMD:ext4:append = " -b 4096"
