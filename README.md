@@ -16,7 +16,9 @@ including automatic rollback.
   ([step 14](#step-14-persistent-data-partition)). The rootfs is read-only from the first moment
   of boot ([step 15](#step-15-read-only-rootfs-and-dm-verity-in-progress)), and an own initramfs
   opens it with dm-verity, so a changed block is refused
-  ([step 16](#step-16-dm-verity-at-boot-in-progress)).
+  ([step 16](#step-16-dm-verity-at-boot)). Kernel, device tree and initramfs with the root hash
+  are one signed FIT in a boot partition per slot, and RAUC updates boot partition and rootfs
+  together.
 - **Verified kernel boot:** the kernel and device tree are one FIT image signed with my key;
   U-Boot carries the public key inside the FIP and refuses unsigned kernels
   ([step 12h](#step-12-ota-updates-with-rauc-in-progress)).
@@ -42,15 +44,16 @@ systemd). It contains:
 | `recipes-microsocks/microsocks/` | A recipe for a third-party project from GitHub, created with `devtool add`, plus a local patch |
 | `recipes-core/images/my-image.bb` | A custom image recipe (`inherit core-image`) with an SSH server, read-only rootfs and a dm-verity hash tree |
 | `recipes-sysmon/sysmon/` | A CMake project (`inherit cmake`) packaged as a daemon that starts at boot, with both a SysVinit script and a systemd unit |
-| `recipes-bsp/u-boot/u-boot-stm32mp*` | A/B boot logic for RAUC built into U-Boot's default environment (slot selection with attempt counters and fallback, boots the slot's signed FIT image), and a locked environment that only accepts RAUC's variables |
+| `recipes-bsp/u-boot/u-boot-stm32mp*` | A/B boot logic for RAUC built into U-Boot's default environment (slot selection with attempt counters and fallback, boots the signed FIT image from the slot's boot partition), and a locked environment that only accepts RAUC's variables |
 | `recipes-bsp/u-boot/` | `fw_env.config` so that `fw_printenv` / `fw_setenv` (and RAUC) can access the U-Boot environment from Linux |
-| `recipes-core/rauc/` | `rauc-conf.bbappend` with the board's RAUC `system.conf` (two rootfs slots, U-Boot backend, status on `/data`) and the public CA certificate; a systemd drop-in so `rauc.service` waits for `/data` |
+| `recipes-core/rauc/` | `rauc-conf.bbappend` with the board's RAUC `system.conf` (two slot groups of rootfs and boot partition, U-Boot backend, status on `/data`) and the public CA certificate; a systemd drop-in so `rauc.service` waits for `/data` |
 | `recipes-core/base-files/` | Adds the persistent `/data` partition to ST's `fstab`, grown to the full partition at boot (`x-systemd.growfs`) |
 | `recipes-core/data-journal/` | A oneshot service that adds the ext4 journal ST's tiny `userfs` image lacks |
 | `recipes-core/images/my-initramfs.bb` | A small initramfs (`cpio.gz`, no systemd) with `veritysetup` and the root hash of `my-image` built in |
 | `recipes-core/initramfs-module-verity/` | An `initramfs-framework` module that opens the rootfs slot with dm-verity and mounts it, or reboots |
 | `recipes-crypto/cryptsetup/` | Removes cryptsetup's `udev` and `ssh-token` options, which pulled 5 MB into the initramfs |
-| `recipes-core/bundles/my-bundle.bb` | A signed RAUC update bundle (`verity` format) with the rootfs of `my-image` |
+| `recipes-core/images/my-bootfs.bb` | The boot partition of a slot: an ext4 image with only the signed FIT (kernel, DTB, dm-verity initramfs) |
+| `recipes-core/bundles/my-bundle.bb` | A signed RAUC update bundle (`verity` format) with the rootfs of `my-image` (with its hash tree) and the boot partition |
 | `recipes-kernel/mymod/` | An out-of-tree kernel module (`inherit module`) with a parameter, loaded automatically at boot |
 | `recipes-kernel/linux/` | `.bbappend`s for `linux-yocto` (QEMU) and `linux-stm32mp` (ST board) that add the same kernel config fragment (exFAT as a module), plus the kernel options RAUC needs for the ST kernel, and a second signed FIT with the dm-verity initramfs |
 | `sdk-example/` | A program cross-compiled outside BitBake with the SDK generated from `my-image` |
@@ -778,7 +781,7 @@ against a hash. Follow-along guide: [docs/15-read-only-rootfs.md](docs/15-read-o
   `.verity-params`, `Verification of root hash failed` with one character changed.
 - The tree is 413 blocks of 4 KB for 52165 data blocks, less than 1 % of the image.
 
-### Step 16: dm-verity at boot (in progress)
+### Step 16: dm-verity at boot
 
 Goal: the board checks every block of the rootfs while it runs, against a root hash that is
 signed together with the kernel. Follow-along guide:
@@ -827,6 +830,26 @@ signed together with the kernel. Follow-along guide:
   inside the FIT, U-Boot refused it (`Bad Data Hash`) and Linux never started. The signature itself
   stayed `OK`: it covers the list of hashes, and the stored hash was unchanged.
 
+**16f: one boot partition per slot, RAUC slot group**
+- New image `my-bootfs`: an ext4 with no packages, only the FIT from 16e as `/fitImage`. ST's
+  `EXTRA_IMAGECMD:ext4` takes the label from `IMAGE_NAME_SUFFIX`, which is empty here, so
+  `mkfs.ext4` failed until the recipe set its own options with `-L bootfs`.
+- Flash layout in `my-image.bb`: two copies of `bootfs` (`bootfs1/2`), `vendorfs` removed
+  (`ST_VENDORFS = "0"`, it was empty), and `FLASHLAYOUT_PARTITION_BIN2LOAD` for the files:
+  `my-bootfs` for the boot partitions, the `.verity` rootfs for `rootfs1/2`. The first try still
+  flashed the plain `.ext4` without the hash tree. The partition numbers stayed the same.
+- U-Boot's `rauc_load` loads `/fitImage` from `bootfs1` or `bootfs2`; `root=` still names the
+  rootfs partition. U-Boot needs no change per version: it only holds the public `fitconf` key.
+- RAUC: `bootfs.0/1` with `parent=rootfs.0/1` in `system.conf`, so RAUC writes a slot group only
+  as a whole. The bundle has two images; the `.verity` rootfs is stored as `rootfs.ext4`
+  (`[rename]`), because RAUC chooses the write method by the file name.
+- After a full flash both slots booted 1.9 by themselves, with dm-verity. An update to 1.10 (new
+  root hash, so only the new FIT fits the new rootfs) booted in B: new FIT size and ramdisk hash
+  from `bootfs2`, the new root hash in the `verity:` line.
+- Rollback: one byte changed in `rootfs2`, B made active. The initramfs refused B three times
+  (`data block 0 is corrupted`), U-Boot's counter reached 0 and A booted 1.9 by itself;
+  `rauc status` showed B as `bad`. With the byte written back, B booted 1.10 again.
+
 ### Other things learned along the way
 
 - `Ctrl-Z` pauses a command instead of cancelling it. A paused `devtool build` kept
@@ -872,7 +895,8 @@ Planned, in this order:
    - [x] dm-verity in the build: hash tree and root hash next to the rootfs image
    - [x] Initramfs that opens the rootfs slot with dm-verity; boot and tamper test by hand
    - [x] Initramfs inside the signed FIT (kernel, DTB and root hash under one signature)
-   - [ ] One boot partition per slot for the FIT, RAUC slot group, full flash
+   - [x] One boot partition per slot for the FIT, RAUC slot group, full flash; update and
+         rollback test
    - [ ] Last, after all other lessons: key hash into the OTP fuses (irreversible)
 5. **Connectivity and comparison**
    - [ ] WiFi: chip firmware, `wpa_supplicant`, systemd-networkd config, credentials kept out of

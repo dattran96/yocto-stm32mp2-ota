@@ -39,3 +39,15 @@ VERITY_IMAGE_FSTYPE:stm32mpcommon = "stsplitpartitions"
 VERITY_INPUT_IMAGE:stm32mpcommon = "${IMGDEPLOYDIR}/${IMAGE_BASENAME}${IMAGE_MACHINE_SUFFIX}.splitted-rootfs.ext4"
 VERITY_SALT = "b5e06473a0642a14a6c7ab46e9fb3f5ae4617ef372d3f008a71fa143d683bcc5"
 EXTRA_IMAGECMD:ext4:append = " -b 4096"
+
+# STM32MP: one boot partition per slot (bootfs1/bootfs2) with the signed
+# FIT from my-bootfs (kernel, DTB, dm-verity initramfs). vendorfs is
+# empty and unused here; without it, rootfs1, rootfs2 and userfs keep
+# their partition numbers 10, 11 and 12.
+ST_VENDORFS = "0"
+PARTITIONS_IMAGES[bootfs] = "${STM32MP_BOOTFS_IMAGE},${STM32MP_BOOTFS_LABEL},${STM32MP_BOOTFS_MOUNTPOINT},${STM32MP_BOOTFS_SIZE},${STM32MP_BOOTFS_TYPE},2"
+FLASHLAYOUT_PARTITION_BIN2LOAD:bootfs = "my-bootfs-${MACHINE}.ext4"
+# rootfs1/rootfs2 get the image with the dm-verity hash tree appended
+# (image_types_verity); the initramfs expects the tree right after the data.
+FLASHLAYOUT_PARTITION_BIN2LOAD:rootfs = "my-image-${MACHINE}.splitted-rootfs.ext4.verity"
+do_create_flashlayout_config[depends] += "my-bootfs:do_image_complete"

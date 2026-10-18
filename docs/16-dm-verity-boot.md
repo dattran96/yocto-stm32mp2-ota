@@ -3,7 +3,7 @@
 **Goal:** every block of the rootfs is checked against a root hash while the board runs, and the
 root hash itself is signed. Guide 15 made the rootfs read-only and built the hash tree
 ([15e](15-read-only-rootfs.md#15e-hash-tree-and-root-hash-in-the-build)). This guide brings it
-into the boot. Learning log: [step 16](../README.md#step-16-dm-verity-at-boot-in-progress).
+into the boot. Learning log: [step 16](../README.md#step-16-dm-verity-at-boot).
 
 Board build only (`build-stm32mp`). The parts:
 
@@ -14,7 +14,7 @@ Board build only (`build-stm32mp`). The parts:
 | 16c | Boot test by hand from the U-Boot prompt | done |
 | 16d | Tamper test: the initramfs refuses a changed slot | done |
 | 16e | FIT with kernel, DTB and initramfs, signed together | done |
-| 16f | One boot partition per slot, RAUC slot group, full flash | next |
+| 16f | One boot partition per slot, RAUC slot group, full flash, update and rollback | done |
 
 ## Background
 
@@ -66,8 +66,8 @@ bitbake my-initramfs ──► /etc/verity-params in the initramfs   (16a, 16b)
                           ▼
                      U-Boot's signature check protects the root hash
 ```
-The root hash cannot be stored in the rootfs it describes, and today the FIT is in the rootfs
-(`/boot/fitImage`). So each slot gets its own boot partition (16f):
+The root hash cannot be stored in the rootfs it describes, and until 16e the FIT was in the
+rootfs (`/boot/fitImage`). So each slot gets its own boot partition (16f):
 ```
 SD card:  ... | bootfs1 (new) | bootfs2 (new) | rootfs1 | rootfs2 | userfs |
                 │
@@ -431,6 +431,256 @@ The kernel does not start. `Data Start` minus the load address `0x8a000000` is `
 which lists the hashes of kernel, DTB and initramfs. The stored hash is unchanged, the data is
 not. Changing the stored hash as well would break the signature. `boot` then starts slot A.
 
+## 16f One boot partition per slot, RAUC slot group
+
+Until now the signed FIT with the initramfs only came from the USB stick. Now each slot gets its
+own boot partition with that FIT, U-Boot loads it from there, and RAUC writes boot partition and
+rootfs of a slot together:
+```
+SD card:  ... | u-boot-env | bootfs1 | bootfs2 | rootfs1 | rootfs2 | userfs |
+                  p7          p8        p9        p10       p11       p12
+
+slot A = bootfs1 + rootfs1          slot B = bootfs2 + rootfs2
+         │                                   │
+         └─ /fitImage (kernel, DTB, initramfs with the root hash of rootfs1)
+```
+The partition numbers stay the same as before, so `system.conf`, `fstab` and `fw_env.config`
+did not change for them: `vendorfs` (empty) is gone and `bootfs` became two partitions.
+
+### Step 1: the boot partition image `my-bootfs`
+[`my-bootfs.bb`](../recipes-core/images/my-bootfs.bb) is an image with no packages
+(`PACKAGE_INSTALL = ""`, `inherit image`). A rootfs postprocess command copies the deployed FIT
+into it as `/fitImage`; `do_rootfs` waits for `virtual/kernel:do_deploy`:
+```
+ROOTFS_POSTPROCESS_COMMAND += "install_fit"
+install_fit() {
+    install -m 0644 ${DEPLOY_DIR_IMAGE}/kernel/fitImage-my-initramfs-${MACHINE}-${MACHINE} \
+        ${IMAGE_ROOTFS}/fitImage
+}
+```
+- ST's machine config sets `EXTRA_IMAGECMD:ext4 = "... -L ${IMAGE_NAME_SUFFIX}"`. With
+  `IMAGE_NAME_SUFFIX = ""` the label is empty and `mkfs.ext4` fails, so the recipe sets its own
+  `EXTRA_IMAGECMD:ext4` with `-L bootfs`.
+
+On the PC, in `build-stm32mp`:
+```
+bitbake my-bootfs
+D=tmp/deploy/images/stm32mp25-disco
+debugfs -R "ls -l /" $D/my-bootfs-stm32mp25-disco.ext4 2>/dev/null | grep fitImage
+cmp <(debugfs -R "cat /fitImage" $D/my-bootfs-stm32mp25-disco.ext4 2>/dev/null) $D/kernel/fitImage-my-initramfs-stm32mp25-disco-stm32mp25-disco && echo SAME
+```
+**Expected:** `fitImage` with the size of the FIT (17017414 bytes for me) and `SAME`. The empty
+skeleton directories of an image (`etc`, `usr`, `var`, ...) are in it too and do no harm.
+
+### Step 2: flash layout
+In [`my-image.bb`](../recipes-core/images/my-image.bb):
+```
+ST_VENDORFS = "0"
+PARTITIONS_IMAGES[bootfs] = "${STM32MP_BOOTFS_IMAGE},${STM32MP_BOOTFS_LABEL},${STM32MP_BOOTFS_MOUNTPOINT},${STM32MP_BOOTFS_SIZE},${STM32MP_BOOTFS_TYPE},2"
+FLASHLAYOUT_PARTITION_BIN2LOAD:bootfs = "my-bootfs-${MACHINE}.ext4"
+do_create_flashlayout_config[depends] += "my-bootfs:do_image_complete"
+FLASHLAYOUT_PARTITION_BIN2LOAD:rootfs = "my-image-${MACHINE}.splitted-rootfs.ext4.verity"
+```
+- The last field of `PARTITIONS_IMAGES` is the number of copies: `2` gives `bootfs1` and
+  `bootfs2`, like `rootfs1/2` in step 12.
+- `BIN2LOAD` chooses the file that is flashed into a partition. Without the last line the rootfs
+  partitions got the plain `.ext4` without the hash tree.
+
+On the PC:
+```
+bitbake my-image
+cut -f5,7 $D/flashlayout_my-image/optee/FlashLayout_sdcard_stm32mp257f-dk-optee_Signed.tsv | grep -E "fs"
+```
+**Expected:** `bootfs1` and `bootfs2` with `my-bootfs-stm32mp25-disco.ext4`, `rootfs1` and
+`rootfs2` with `my-image-stm32mp25-disco.splitted-rootfs.ext4.verity`, `userfs`; no `vendorfs`.
+The binary is column 7.
+
+### Step 3: U-Boot loads the FIT from the slot's boot partition
+In [`stm32mp2.env`](../recipes-bsp/u-boot/u-boot-stm32mp/stm32mp2.env), `rauc_select` also sets
+`bootpartname` (`bootfs1` for A, `bootfs2` for B), and `rauc_load` loads from there:
+```
+part number mmc ${boot_instance} ${bootpartname} bootpart;
+...
+if load mmc ${boot_instance}:${bootpart} ${kernel_addr_r} /fitImage; then
+    bootm ${kernel_addr_r};
+fi;
+```
+`root=PARTUUID=` still names the rootfs partition; the initramfs opens it with dm-verity.
+
+On the PC:
+```
+bitbake my-image
+strings $D/u-boot/u-boot-nodtb-stm32mp25-disco-*.bin | grep -E "^rauc_load=|^rauc_select=" | grep -o "bootpart[a-z]* [a-z0-9]*\|/fitImage"
+ls -l --time-style=+%H:%M $D/fip/fip-stm32mp257f-dk-optee-sdcard_Signed.bin
+```
+**Expected:** `bootpartname bootfs1`, `bootpartname bootfs2`, `/fitImage`, and a signed FIP from
+this build.
+
+U-Boot does not change for a new version: it holds only the public `fitconf` key and accepts every
+FIT signed with the private key. Only FIT and rootfs change per version, and both are in the
+bundle:
+```
+ROM ─(ST key)─► TF-A ─(ST key)─► U-Boot ─(fitconf key)─► FIT ─(root hash)─► rootfs
+     fixed           fixed            fixed               changes per version
+```
+
+### Step 4: RAUC slot group
+In [`system.conf`](../recipes-core/rauc/files/system.conf) each boot partition is a child of its
+rootfs slot (`parent=`). RAUC installs a slot group only as a whole:
+```
+[slot.bootfs.0]
+device=/dev/disk/by-path/platform-42080000.bus-amba-48220000.mmc-part8
+type=ext4
+parent=rootfs.0
+
+[slot.bootfs.1]
+device=/dev/disk/by-path/platform-42080000.bus-amba-48220000.mmc-part9
+type=ext4
+parent=rootfs.1
+```
+In [`my-bundle.bb`](../recipes-core/bundles/my-bundle.bb):
+```
+RAUC_BUNDLE_SLOTS = "rootfs bootfs"
+RAUC_SLOT_rootfs[file] = "my-image-${MACHINE}.splitted-rootfs.ext4.verity"
+RAUC_SLOT_rootfs[rename] = "rootfs.ext4"
+RAUC_SLOT_bootfs = "my-bootfs"
+RAUC_SLOT_bootfs[fstype] = "ext4"
+RAUC_SLOT_bootfs[file] = "my-bootfs-${MACHINE}.ext4"
+```
+- The bundle gets the `.verity` file, the same as the flash layout.
+- RAUC chooses how to write an image by its file name, so `[rename]` stores it as `rootfs.ext4`.
+- `bundle.bbclass` makes the bundle wait for `my-bootfs:do_image_complete` by itself.
+
+On the PC (there is no `rauc` on the PC, so the one from the build is used):
+```
+bitbake my-bundle
+S=tmp/work/x86_64-linux/rauc-native/1.15.2/recipe-sysroot-native
+LD_LIBRARY_PATH=$S/usr/lib $S/usr/bin/rauc info --keyring=$HOME/yocto-keys/rauc/openssl-ca/dev/ca.cert.pem $D/my-bundle-stm32mp25-disco.raucb 2>&1 | grep -E "Version|Images|Filename|Size:|Checksum"
+sha256sum $D/my-image-stm32mp25-disco.splitted-rootfs.ext4.verity $D/my-bootfs-stm32mp25-disco.ext4
+```
+**Expected:** `2 Images`: `[rootfs]` as `rootfs.ext4` (212,7 MB for me) and `[bootfs]` as
+`my-bootfs-stm32mp25-disco.ext4` (67,1 MB); their checksums are the two `sha256sum`s.
+
+### Step 5: full flash
+`DISTRO_VERSION = "1.9"`. Flash the signed TSV (this erases `/data` too):
+```
+cd tmp/deploy/images/stm32mp25-disco
+STM32_Programmer_CLI -c port=usb1 -w flashlayout_my-image/optee/FlashLayout_sdcard_stm32mp257f-dk-optee_Signed.tsv
+```
+Boot from the SD card. **Expected** in the serial log, without anything from the stick:
+```
+Booting slot A (rootfs1), attempts left: A=2 B=3
+17017414 bytes read in 918 ms (17.7 MiB/s)
+   Verifying Hash Integrity ... sha256,rsa2048:fitconf+ OK
+   Trying 'ramdisk-1' ramdisk subimage
+...
+verity: rootfs /dev/mmcblk0p10, root hash 4ac09197...
+EXT4-fs (dm-0): mounted filesystem ... ro with ordered data mode.
+Welcome to My Learning Distro 1.9 (learning)!
+```
+On the board:
+```
+grep " / " /proc/mounts
+rauc status | grep -E "Booted from|Activated|\[|bootname|boot status"
+systemctl --failed --no-legend
+```
+**Expected:** `/dev/mapper/vroot / ext4 ro,relatime`; two slot groups, each `[bootfs.x]`
+indented under its `[rootfs.x]`; no failed units.
+
+The flash writes the same images into both slots (copy `2`), so A and B are equal now.
+
+### Step 6: update test with a new version
+An update with the same version would not show much: B would boot even if RAUC skipped the boot
+partition. A new version changes the root hash, and only the new FIT knows it:
+```
+DISTRO_VERSION = "1.10"
+  → /etc/os-release in the rootfs → new hash tree → new root hash
+  → my-initramfs with the new /etc/verity-params → new FIT (re-signed) → new my-bootfs
+```
+If RAUC wrote only the rootfs, the old FIT would refuse it (`metadata block ... is corrupted`,
+test A in 16e).
+
+On the PC, after `bitbake my-bundle`:
+```
+grep -o "VERITY_ROOT_HASH=[0-9a-f]\{16\}" $D/my-image-stm32mp25-disco.splitted-rootfs.ext4.verity-params
+```
+**Expected:** a new hash (`0958c609...` for me, not `4ac09197...`). Copy the bundle to the stick
+with `cp -L` (the deploy name is a link).
+
+On the board, running slot A:
+```
+mkdir -p /run/usb
+mount /dev/sda1 /run/usb
+rauc install /run/usb/my-bundle-stm32mp25-disco.raucb
+rauc status | grep -E "Activated|\[|boot status"
+umount /run/usb
+reboot
+```
+**Expected:** `Activated: rootfs.1 (B)`, then:
+```
+Booting slot B (rootfs2), attempts left: A=3 B=2
+17017410 bytes read in 917 ms (17.7 MiB/s)
+     Description:  my-initramfs
+     Hash value:   6b61519e...          (1.9: b514acbd...)
+verity: rootfs /dev/mmcblk1p11, root hash 0958c609...
+EXT4-fs (dm-0): mounted filesystem ... ro with ordered data mode.
+Welcome to My Learning Distro 1.10 (learning)!
+```
+- The FIT size and the ramdisk hash changed: RAUC wrote `bootfs2`. The new rootfs fits the new
+  root hash: RAUC wrote `rootfs2` too.
+- The kernel hash changed as well, with the same size: the kernel was rebuilt. The DTB hash is the
+  same.
+- The SD card was `mmcblk1` in this boot, not `mmcblk0`. The PARTUUID in `root=` and the
+  `by-path` names in `system.conf` do not depend on that.
+
+### Step 7: rollback test
+Break slot B on purpose and let U-Boot go back to A by itself.
+
+1. From B: `rauc status mark-active other`, `reboot`. **Expected:** `Booting slot A (rootfs1)`,
+   version 1.9.
+2. On A, check the device first:
+   ```
+   cat /proc/cmdline | grep -o "rauc.slot=."
+   P=$(readlink -f /dev/disk/by-path/platform-42080000.bus-amba-48220000.mmc-part11)
+   cat /sys/class/block/$(basename $P)/uevent | grep PARTNAME
+   ```
+   **Expected:** `rauc.slot=A`, `PARTNAME=rootfs2`. Only then change the ext4 label of rootfs2
+   (as in 16d):
+   ```
+   V=/dev/disk/by-path/platform-42080000.bus-amba-48220000.mmc-part11
+   printf 'R' | dd of=$V bs=1 seek=1144 count=1
+   sync
+   dd if=$V bs=1 skip=1144 count=6 2>/dev/null; echo
+   ```
+   **Expected:** `Rootfs`.
+3. `rauc status mark-active other`, `reboot`. B gets 3 attempts again.
+4. Nothing to do. **Expected:** three boots of B, each refused by the initramfs
+   (`data block 0 is corrupted`, reboot), with `B=2`, `B=1`, `B=0`; then
+   `Booting slot A (rootfs1)` and version 1.9.
+5. On A:
+   ```
+   cat /etc/os-release | grep VERSION_ID
+   rauc status | grep -E "Booted from|Activated|boot status"
+   ```
+   **Expected** (what I got):
+   ```
+   VERSION_ID=1.9
+   Booted from: rootfs.0 (A)
+   Activated: rootfs.0 (A)
+         boot status: bad
+         boot status: good
+   ```
+   B is `bad` (no attempts left). `Activated` is A: RAUC's U-Boot backend takes the first slot in
+   `BOOT_ORDER` that still has attempts.
+6. Repair B: the same check as in 2, then
+   ```
+   printf 'r' | dd of=$V bs=1 seek=1144 count=1
+   sync
+   rauc status mark-active other
+   reboot
+   ```
+   **Expected:** `Booting slot B (rootfs2)`, version 1.10.
+
 ## Errors you may see
 - `usb start` in U-Boot: `EHCI timed out on TD`, `0 Storage Device(s) found`. The stick works in
   Linux but not at once in U-Boot. Plugging it into the other USB-A port and `usb reset` (once or
@@ -443,3 +693,7 @@ not. Changing the stored hash as well would break the signature. `boot` then sta
   belongs to another build than the root hash (see test A in 16e).
 - `Bootstage space exhasuted` in U-Boot before `Starting kernel`: U-Boot's boot-time statistics
   table is full. Harmless.
+- `mkfs.ext4: ... label too long` (or a missing label) for `my-bootfs`: ST's `EXTRA_IMAGECMD:ext4`
+  uses `-L ${IMAGE_NAME_SUFFIX}`, which is empty there. Set `EXTRA_IMAGECMD:ext4` in the recipe.
+- `rauc info` on the PC prints nothing with `2>/dev/null`: there is no `rauc` on the PC. Use the
+  one from `rauc-native` (16f step 4) and the CA from `openssl-ca/dev/ca.cert.pem`.

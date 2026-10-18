@@ -123,8 +123,11 @@ PC$ grep -E "BOOTCOMMAND|ENV_WRITEABLE_LIST|ENV_ACCESS_IGNORE_FORCE" $D/u-boot/c
 ```
 PC$ cat $D/flashlayout_my-image/optee/FlashLayout_sdcard_stm32mp257f-dk-optee.tsv
 ```
-- **Expected:** partitions `fsbla1/2`, `metadata1/2`, `fip-a/b`, `u-boot-env`, `bootfs`,
-  `vendorfs`, `rootfs1`, `rootfs2`, `userfs`, and the image file for each.
+- **Expected:** partitions `fsbla1/2`, `metadata1/2`, `fip-a/b`, `u-boot-env`, `bootfs1`,
+  `bootfs2`, `rootfs1`, `rootfs2`, `userfs`, and the image file for each (since step 16f;
+  before: one `bootfs` and `vendorfs`).
+- `cut -f5,7 <tsv> | grep fs`: `bootfs1/2` get `my-bootfs-stm32mp25-disco.ext4`, `rootfs1/2`
+  get `my-image-stm32mp25-disco.splitted-rootfs.ext4.verity`. The binary is column 7.
 
 ## FIT image (kernel + device tree)
 
@@ -206,12 +209,19 @@ PC$ oe-run-native tf-a-tools-native fiptool info $D/fip/fip-stm32mp257f-dk-optee
 ```
 PC$ oe-run-native rauc-native rauc info --keyring=../../meta-mylayer/recipes-core/rauc/files/ca.cert.pem $D/my-bundle-stm32mp25-disco.raucb
 ```
+Without `oe-run-native` (no `rauc` on the PC):
+```
+S=tmp/work/x86_64-linux/rauc-native/1.15.2/recipe-sysroot-native
+LD_LIBRARY_PATH=$S/usr/lib $S/usr/bin/rauc info --keyring=$HOME/yocto-keys/rauc/openssl-ca/dev/ca.cert.pem $D/my-bundle-stm32mp25-disco.raucb
+```
 - **Expected:**
   - `Verified inline signature by '... Development-1'`
   - `Compatible: 'stm32mp257f-dk-mydistro'`
   - `Version` = your `DISTRO_VERSION`
   - `Bundle Format: verity`
-  - `1 Image: [rootfs]` with `Filename: my-image-stm32mp25-disco.splitted-rootfs.ext4`
+  - since step 16f: `2 Images`: `[rootfs]` with `Filename: rootfs.ext4` (the `.verity` file) and
+    `[bootfs]` with `Filename: my-bootfs-stm32mp25-disco.ext4`; their `Checksum`s are the
+    `sha256sum`s of those two deploy files (before: `1 Image`, the plain `.ext4`)
   - `Certificate Chain`: the signing certificate `Development-1`, issued by `rauc CA Development`
 - This is the same check the board does before it installs anything.
 
@@ -250,6 +260,16 @@ sha256sum $D/my-initramfs-stm32mp25-disco.cpio.gz
   the `sha256sum` of the initramfs.
 - `dumpimage` needs `bitbake u-boot-tools-native -c addto_recipe_sysroot` once.
 
+## Boot partition image (since step 16f)
+
+```
+debugfs -R "ls -l /" $D/my-bootfs-stm32mp25-disco.ext4 2>/dev/null | grep fitImage
+cmp <(debugfs -R "cat /fitImage" $D/my-bootfs-stm32mp25-disco.ext4 2>/dev/null) $D/kernel/fitImage-my-initramfs-stm32mp25-disco-stm32mp25-disco && echo SAME
+```
+- **Expected:** `fitImage` with the size of the FIT, and `SAME`.
+- U-Boot loads it from there: `strings $D/u-boot/u-boot-nodtb-stm32mp25-disco-*.bin | grep "^rauc_load="`
+  shows `${bootpartname} bootpart` and `/fitImage`.
+
 ## Logs when a task fails
 
 ```
@@ -269,7 +289,7 @@ PC$ ls tmp/work/*/<recipe>/*/temp/
 | Service running? | `systemctl status sysmon` | `active (running)` |
 | Which slot? | `rauc status` | `Booted from: rootfs.0 (A)` or `rootfs.1 (B)` |
 | What did U-Boot pass? | `cat /proc/cmdline` | `root=PARTUUID=... rauc.slot=A` |
-| What is mounted? | `mount` (`findmnt` is not in the image) | `/` on the slot's partition |
+| What is mounted? | `mount` or `grep " / " /proc/mounts` (`findmnt` is not in the image) | `/` on the slot's partition; since step 16: `/dev/mapper/vroot` |
 | U-Boot env from Linux | `fw_printenv \| grep BOOT_` | `BOOT_ORDER`, `BOOT_A_LEFT`, `BOOT_B_LEFT` |
 | Stable disk names | `ls -l /dev/disk/by-path/` | `...48220000.mmc-partN` = SD card |
 | Name of a raw partition | `cat /sys/class/block/$(basename $(readlink -f <dev>))/uevent` | `PARTNAME=fip-a` (BusyBox `blkid` shows nothing without a filesystem) |
@@ -282,6 +302,8 @@ PC$ ls tmp/work/*/<recipe>/*/temp/
 | dm-verity device | `veritysetup status <name>`, `dmesg \| grep verity` | `status: verified`, the root hash you passed; `data block ... is corrupted` if a block was changed |
 | Rootfs through dm-verity? (since step 16) | `mount \| grep " / "`, `veritysetup status vroot` | `/dev/mapper/vroot on / type ext4 (ro,...)`, `status: verified` |
 | Did the initramfs run? | boot console | `Run /init as init process`, `verity: rootfs /dev/mmcblkXp11, root hash ...` (normal boot: `Run /sbin/init`) |
+| FIT from the slot's boot partition? (since step 16f) | boot console | `Booting slot B (rootfs2)`, then `17017410 bytes read` (the size of that slot's FIT) and `my-initramfs` in the ramdisk |
+| Slot groups | `rauc status` | `[bootfs.x]` indented under `[rootfs.x]`; a slot with no attempts left is `boot status: bad` |
 | ext4 block size of an image (PC) | `dumpe2fs -h <image> \| grep "Block size"` | must be ≥ the dm-verity data block size |
 | RAUC slot status | `cat /data/rauc/central.raucs` | a `[slot.rootfs.N]` section per installed slot, `bundle.version`, `sha256` of the rootfs image |
 | Secure boot state | first console lines after power-on | `TRUSTED_BOARD_BOOT support enabled`, `ROTPK is not deployed ...` on an open chip |
