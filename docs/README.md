@@ -27,6 +27,7 @@ can follow yourself. The learning log says *what I did and what went wrong*; the
 | [13 Secure boot chain](13-secure-boot.md) | Step 13 | Board |
 | [14 Persistent data partition](14-data-partition.md) | Step 14 | Board |
 | [15 Read-only rootfs and dm-verity](15-read-only-rootfs.md) | Step 15 | Board |
+| [16 dm-verity at boot](16-dm-verity-boot.md) | Step 16 | Board |
 
 ## Conventions
 

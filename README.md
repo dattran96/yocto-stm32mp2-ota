@@ -14,7 +14,9 @@ including automatic rollback.
   first boots of an update ([step 12](#step-12-ota-updates-with-rauc-in-progress)). Data and
   RAUC's slot status live on a separate `/data` partition that updates never touch
   ([step 14](#step-14-persistent-data-partition)). The rootfs is read-only from the first moment
-  of boot, as preparation for dm-verity ([step 15](#step-15-read-only-rootfs-and-dm-verity-in-progress)).
+  of boot ([step 15](#step-15-read-only-rootfs-and-dm-verity-in-progress)), and an own initramfs
+  opens it with dm-verity, so a changed block is refused
+  ([step 16](#step-16-dm-verity-at-boot-in-progress)).
 - **Verified kernel boot:** the kernel and device tree are one FIT image signed with my key;
   U-Boot carries the public key inside the FIP and refuses unsigned kernels
   ([step 12h](#step-12-ota-updates-with-rauc-in-progress)).
@@ -38,13 +40,16 @@ systemd). It contains:
 | `recipes-hello/hello/` | A recipe written by hand for a small C program (cross-compiled with `${CC}`) |
 | `recipes-devtools/file/` | A `.bbappend` that patches an existing poky recipe (`file`), created with `devtool modify` / `devtool finish` |
 | `recipes-microsocks/microsocks/` | A recipe for a third-party project from GitHub, created with `devtool add`, plus a local patch |
-| `recipes-core/images/my-image.bb` | A custom image recipe (`inherit core-image`) with an SSH server |
+| `recipes-core/images/my-image.bb` | A custom image recipe (`inherit core-image`) with an SSH server, read-only rootfs and a dm-verity hash tree |
 | `recipes-sysmon/sysmon/` | A CMake project (`inherit cmake`) packaged as a daemon that starts at boot, with both a SysVinit script and a systemd unit |
 | `recipes-bsp/u-boot/u-boot-stm32mp*` | A/B boot logic for RAUC built into U-Boot's default environment (slot selection with attempt counters and fallback, boots the slot's signed FIT image), and a locked environment that only accepts RAUC's variables |
 | `recipes-bsp/u-boot/` | `fw_env.config` so that `fw_printenv` / `fw_setenv` (and RAUC) can access the U-Boot environment from Linux |
 | `recipes-core/rauc/` | `rauc-conf.bbappend` with the board's RAUC `system.conf` (two rootfs slots, U-Boot backend, status on `/data`) and the public CA certificate; a systemd drop-in so `rauc.service` waits for `/data` |
 | `recipes-core/base-files/` | Adds the persistent `/data` partition to ST's `fstab`, grown to the full partition at boot (`x-systemd.growfs`) |
 | `recipes-core/data-journal/` | A oneshot service that adds the ext4 journal ST's tiny `userfs` image lacks |
+| `recipes-core/images/my-initramfs.bb` | A small initramfs (`cpio.gz`, no systemd) with `veritysetup` and the root hash of `my-image` built in |
+| `recipes-core/initramfs-module-verity/` | An `initramfs-framework` module that opens the rootfs slot with dm-verity and mounts it, or reboots |
+| `recipes-crypto/cryptsetup/` | Removes cryptsetup's `udev` and `ssh-token` options, which pulled 5 MB into the initramfs |
 | `recipes-core/bundles/my-bundle.bb` | A signed RAUC update bundle (`verity` format) with the rootfs of `my-image` |
 | `recipes-kernel/mymod/` | An out-of-tree kernel module (`inherit module`) with a parameter, loaded automatically at boot |
 | `recipes-kernel/linux/` | `.bbappend`s for `linux-yocto` (QEMU) and `linux-stm32mp` (ST board) that add the same kernel config fragment (exFAT as a module), plus the kernel options RAUC needs for the ST kernel |
@@ -773,6 +778,41 @@ against a hash. Follow-along guide: [docs/15-read-only-rootfs.md](docs/15-read-o
   `.verity-params`, `Verification of root hash failed` with one character changed.
 - The tree is 413 blocks of 4 KB for 52165 data blocks, less than 1 % of the image.
 
+### Step 16: dm-verity at boot (in progress)
+
+Goal: the board checks every block of the rootfs while it runs, against a root hash that is
+signed together with the kernel. Follow-along guide:
+[docs/16-dm-verity-boot.md](docs/16-dm-verity-boot.md).
+
+**16a–16d: initramfs that opens the slot with dm-verity**
+- dm-verity must be set up before the rootfs is mounted, so `veritysetup` cannot come from the
+  rootfs. A new image `my-initramfs` (`cpio.gz`) uses poky's `initramfs-framework`: its `/init`
+  runs the scripts in `/init.d/` in number order and ends with `switch_root`. My own module
+  `80-verity` runs before poky's `90-rootfs`: it finds the slot with
+  `blkid -t PARTUUID=` from `root=`, runs `veritysetup open` with the parameters from
+  `/etc/verity-params`, and mounts `/dev/mapper/vroot`. `90-rootfs` then finds the rootfs
+  mounted and does nothing. Any failure reboots; it never mounts without the check.
+- The initramfs recipe copies `.verity-params` of `my-image` into the image
+  (`ROOTFS_POSTPROCESS_COMMAND`); `do_rootfs[depends] += "my-image:do_image_complete"` rebuilds it
+  whenever the rootfs changes. This showed at once: changing cryptsetup changed `my-image`, and
+  the new root hash appeared in the initramfs without anything else.
+- ST adds partition images and a flash layout to every image; `ENABLE_PARTITIONS_IMAGE`,
+  `ENABLE_FLASHLAYOUT_CONFIG` and `ENABLE_IMAGE_LICENSE_SUMMARY = "0"` before
+  `inherit core-image` turn them off, like ST's own partition images.
+- The first initramfs was 10 MB. Listing the archive (`cpio -tv`) showed systemd's udev,
+  `libsystemd-shared` and `libssh`: cryptsetup's `udev` and `ssh-token` options. A
+  `cryptsetup_%.bbappend` removes both, and `NO_RECOMMENDATIONS = "1"` drops the recommended
+  dm-crypt kernel modules (dm-verity is built into the kernel). Result: 5.3 MB, 17 packages,
+  most of it OpenSSL's `libcrypto`.
+- Boot test by hand from the U-Boot prompt: A's signed FIT, the initramfs from the USB stick as
+  a raw ramdisk (`bootm <fit> <addr>:<size>`), `root=PARTUUID=` of slot B with the built
+  `.verity` image. `/` was `/dev/mapper/vroot`, `status: verified`, RAUC saw slot B. The SD card
+  was `mmcblk2` in one boot and `mmcblk0` in the next; the PARTUUID found it both times.
+- Tamper test: one byte of the ext4 superblock changed on the partition. `data block 0 is
+  corrupted`, `unable to read superblock`, the module rebooted, and U-Boot booted slot A.
+- U-Boot's `usb start` did not find the stick (`EHCI timed out on TD`) until it was plugged into
+  the other port and `usb reset` ran once or twice.
+
 ### Other things learned along the way
 
 - `Ctrl-Z` pauses a command instead of cancelling it. A paused `devtool build` kept
@@ -815,7 +855,9 @@ Planned, in this order:
    - [x] Document the development settings (OP-TEE provisioning driver, open debug access)
    - [x] Read-only rootfs (`read-only-rootfs`, `ro` from U-Boot)
    - [x] dm-verity by hand: hash tree on the PC, tamper test on the board
-   - [ ] dm-verity in the build: per-slot boot partition, FIT with the root hash, RAUC slot group
+   - [x] dm-verity in the build: hash tree and root hash next to the rootfs image
+   - [x] Initramfs that opens the rootfs slot with dm-verity; boot and tamper test by hand
+   - [ ] Initramfs inside the signed FIT, one boot partition per slot, RAUC slot group
    - [ ] Last, after all other lessons: key hash into the OTP fuses (irreversible)
 5. **Connectivity and comparison**
    - [ ] WiFi: chip firmware, `wpa_supplicant`, systemd-networkd config, credentials kept out of

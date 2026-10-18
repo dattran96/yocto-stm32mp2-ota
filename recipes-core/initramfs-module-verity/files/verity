@@ -1,0 +1,51 @@
+#!/bin/sh
+# initramfs-framework module: open the rootfs slot from root= with
+# dm-verity and mount it at $ROOTFS_DIR. The root hash comes from
+# /etc/verity-params, which is built into this initramfs.
+# 90-rootfs then finds $ROOTFS_DIR mounted and does nothing,
+# 99-finish switches to it.
+
+verity_enabled() {
+        [ -f /etc/verity-params ] && [ -n "$bootparam_root" ]
+}
+
+# Never mount the slot without the check. Reboot instead: U-Boot has
+# already counted this try, and boots the other slot when none are left.
+verity_fail() {
+        msg "verity: $1, rebooting"
+        sleep 2
+        reboot -f
+}
+
+verity_run() {
+        . /etc/verity-params
+
+        case "$bootparam_root" in
+        PARTUUID=*) uuid=${bootparam_root#PARTUUID=} ;;
+        *) verity_fail "root=$bootparam_root is not PARTUUID=..." ;;
+        esac
+
+        # The SD card shows up a moment after the kernel starts.
+        C=0
+        while true; do
+                dev=$(blkid -c /dev/null -o device -t PARTUUID=$uuid)
+                [ -n "$dev" ] && break
+                [ $C -ge 10 ] && verity_fail "no partition with PARTUUID=$uuid"
+                sleep 1
+                C=$((C + 1))
+        done
+        msg "verity: rootfs $dev, root hash $VERITY_ROOT_HASH"
+
+        veritysetup open --no-superblock \
+                --data-block-size=$VERITY_DATA_BLOCK_SIZE \
+                --hash-block-size=$VERITY_HASH_BLOCK_SIZE \
+                --data-blocks=$VERITY_DATA_BLOCKS \
+                --hash-offset=$((VERITY_DATA_SECTORS * 512)) \
+                --hash=$VERITY_HASH_ALGORITHM \
+                --salt=$VERITY_SALT \
+                $dev vroot $dev $VERITY_ROOT_HASH \
+                || verity_fail "veritysetup open failed"
+
+        mount -t ext4 -o ro /dev/mapper/vroot $ROOTFS_DIR \
+                || verity_fail "mount of /dev/mapper/vroot failed"
+}

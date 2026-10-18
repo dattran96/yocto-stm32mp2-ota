@@ -227,6 +227,17 @@ veritysetup verify --no-superblock --salt=$VERITY_SALT --data-blocks=$VERITY_DAT
   (`VERITY_DATA_SECTORS` × 512).
 - `dumpe2fs -h $D/my-image-stm32mp25-disco.splitted-rootfs.ext4 | grep "Block size"`: `4096`.
 
+## Initramfs (since step 16)
+
+```
+zcat $D/my-initramfs-stm32mp25-disco.cpio.gz | cpio -t 2>/dev/null | grep -E "^init.d|verity"
+zcat $D/my-initramfs-stm32mp25-disco.cpio.gz | cpio -i --to-stdout etc/verity-params 2>/dev/null; echo
+cut -d" " -f1 $D/my-initramfs-stm32mp25-disco.manifest | tr '\n' ' '; echo
+```
+- **Expected:** `init.d/80-verity`, `90-rootfs`, `99-finish`, `etc/verity-params`; the
+  `VERITY_ROOT_HASH` inside is the one of `my-image`; no `systemd` or `udev` in the manifest.
+- `cpio -t` and `--to-stdout` only read the archive; nothing is written to disk.
+
 ## Logs when a task fails
 
 ```
@@ -257,6 +268,8 @@ PC$ ls tmp/work/*/<recipe>/*/temp/
 | Rootfs read-only from the start? | `cat /proc/cmdline`, `dmesg \| grep p1[01]` | `rootwait ro`; `mounted filesystem ... ro`, no `re-mounted ... ro` (since step 15c) |
 | Who writes into `/var/lib`? | `ls -la /var/volatile/lib` | only what this boot wrote (overlay upper layer in RAM, since step 15b) |
 | dm-verity device | `veritysetup status <name>`, `dmesg \| grep verity` | `status: verified`, the root hash you passed; `data block ... is corrupted` if a block was changed |
+| Rootfs through dm-verity? (since step 16) | `mount \| grep " / "`, `veritysetup status vroot` | `/dev/mapper/vroot on / type ext4 (ro,...)`, `status: verified` |
+| Did the initramfs run? | boot console | `Run /init as init process`, `verity: rootfs /dev/mmcblkXp11, root hash ...` (normal boot: `Run /sbin/init`) |
 | ext4 block size of an image (PC) | `dumpe2fs -h <image> \| grep "Block size"` | must be ≥ the dm-verity data block size |
 | RAUC slot status | `cat /data/rauc/central.raucs` | a `[slot.rootfs.N]` section per installed slot, `bundle.version`, `sha256` of the rootfs image |
 | Secure boot state | first console lines after power-on | `TRUSTED_BOARD_BOOT support enabled`, `ROTPK is not deployed ...` on an open chip |
