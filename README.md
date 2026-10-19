@@ -868,7 +868,7 @@ signed together with the kernel. Follow-along guide:
 - [x] Build for real hardware (STM32MP257F-DK with `meta-st-stm32mp`)
 - [x] OTA updates with RAUC: A/B rootfs, U-Boot boot selection, signed bundles, rollback
 
-Planned, in this order:
+Done so far:
 
 1. **OTA stage 2 and verified kernel boot**
    - [x] Kernel and device tree inside each rootfs slot, so updates can change the kernel;
@@ -878,13 +878,7 @@ Planned, in this order:
 2. **Persistent data**
    - [x] Mount `userfs` as a data partition that survives updates
    - [x] Central RAUC status file (`data-directory`) on that partition
-3. **Device tree and a driver** (I2C sensor, e.g. BME280, on the GPIO expansion header)
-   - [ ] Find the I2C controller and pins in the board schematics
-   - [ ] Device tree node for the sensor in a `linux-stm32mp` bbappend; test with the existing
-         `bmp280` IIO driver and `i2cdetect`
-   - [ ] Own I2C driver (`probe()`, `regmap`, sysfs/IIO interface) as an out-of-tree module
-   - [ ] Debug the bus with a logic analyzer (wrong address, missing pull-ups)
-4. **Secure boot chain**
+3. **Secure boot chain**
    - [x] Sign TF-A and FIP with ST's tools; tamper test shows TF-A refusing a changed U-Boot
    - [x] Document the chain of trust: ROM → TF-A → FIP → signed FIT → signed RAUC bundles
    - [x] A/B boot logic inside U-Boot, environment locked to RAUC's variables
@@ -897,9 +891,50 @@ Planned, in this order:
    - [x] Initramfs inside the signed FIT (kernel, DTB and root hash under one signature)
    - [x] One boot partition per slot for the FIT, RAUC slot group, full flash; update and
          rollback test
-   - [ ] Last, after all other lessons: key hash into the OTP fuses (irreversible)
-5. **Connectivity and comparison**
-   - [ ] WiFi: chip firmware, `wpa_supplicant`, systemd-networkd config, credentials kept out of
-         the repository
-   - [ ] Optional: install updates over HTTPS (RAUC streaming or hawkBit)
-   - [ ] Optional: Mender on QEMU, compared with RAUC
+
+Next, production level, in this order:
+
+1. **Reproducible build**
+   - [ ] kas file with all layers pinned to exact git revisions; one command sets up and builds
+2. **Development and release builds, hardening**
+   - [ ] Release configuration without development settings (no empty root password, no
+         debug tools, serial login off)
+   - [ ] SSH with keys only; Dropbear host key on `/data`, so it stays the same across updates
+3. **Robust updates**
+   - [ ] Mark a slot good only after a health check (service running, network up), not right
+         after boot
+   - [ ] systemd watchdog for the main services
+   - [ ] Anti-rollback: refuse bundles older than the installed version
+4. **CI/CD**
+   - [ ] GitHub Actions: lint, `yocto-check-layer`, parse check (`bitbake -p`)
+   - [ ] Full build of image, RAUC bundle and SDK on a self-hosted runner (own pushes only,
+         never pull requests from forks)
+   - [ ] Signing: development key in CI, release key kept apart (`rauc resign`)
+   - [ ] Automatic checks of the results: `rauc info` (signature, compatible, version), a test
+         build of `sdk-example/` with the SDK
+5. **SBOM, CVEs and licenses**
+   - [ ] SPDX SBOM (`create-spdx`), `cve-check` report, license manifest and GPL sources, as CI
+         results
+6. **OTA from a server** (over Ethernet)
+   - [ ] hawkBit server in Docker, `rauc-hawkbit-updater` on the board, device token kept out of
+         the image and the repository
+   - [ ] RAUC streaming (install directly from HTTPS); optional adaptive updates
+7. **Device tree and a driver** (I2C sensor, e.g. BME280, on the GPIO expansion header)
+   - [ ] Find the I2C controller and pins in the board schematics
+   - [ ] Device tree node for the sensor in a `linux-stm32mp` bbappend; test with the existing
+         `bmp280` IIO driver and `i2cdetect`
+   - [ ] Own I2C driver (`probe()`, `regmap`, sysfs/IIO interface) as an out-of-tree module
+   - [ ] Debug the bus with a logic analyzer (wrong address, missing pull-ups)
+
+Later:
+
+- [ ] Encrypted `/data` (dm-crypt, key from OP-TEE) and protected storage for device secrets
+- [ ] Logging and diagnostics: persistent, size-limited journal on `/data`, crash reports
+- [ ] Clean-up: remove the old FIT and device trees from `/boot` of the rootfs
+      (`kernel-image-fitimage`, `kernel-devicetree`). Since step 16f U-Boot loads the FIT from
+      the slot's boot partition, so these ~12 MB per slot are unused
+- [ ] WiFi: chip firmware, `wpa_supplicant`, systemd-networkd config, credentials kept out of the
+      repository
+- [ ] Media player controlled with an IR remote
+- [ ] Optional: Mender on QEMU, compared with RAUC
+- [ ] Last, after all other lessons: key hash into the OTP fuses (irreversible)
