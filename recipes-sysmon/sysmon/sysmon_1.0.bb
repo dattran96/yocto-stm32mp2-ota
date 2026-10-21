@@ -10,7 +10,11 @@ SRC_URI = " \
 
 S = "${WORKDIR}/sysmon"
 
-inherit cmake update-rc.d systemd
+inherit cmake pkgconfig update-rc.d systemd
+
+# With systemd in DISTRO_FEATURES: build against libsystemd for sd_notify()
+PACKAGECONFIG ??= "${@bb.utils.filter('DISTRO_FEATURES', 'systemd', d)}"
+PACKAGECONFIG[systemd] = "-DWITH_SYSTEMD=ON,-DWITH_SYSTEMD=OFF,systemd"
 
 # SysVinit: /etc/init.d/sysmon, linked into the runlevels at priority 90
 INITSCRIPT_NAME = "sysmon"

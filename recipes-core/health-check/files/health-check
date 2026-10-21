@@ -1,0 +1,16 @@
+#!/bin/sh
+# Health check of the booted slot. Exit 0: healthy, the slot is marked good.
+# Anything else: the unit fails and the board reboots (see health-check.service).
+fail() { echo "health-check: FAILED: $*" >&2; exit 1; }
+
+slot=$(sed -n 's/.*rauc\.slot=\([A-Za-z]*\).*/\1/p' /proc/cmdline)
+
+# Test switch for one slot only (so the other slot still passes):
+# touch /data/health-check-fail-B makes slot B fail.
+[ -e "/data/health-check-fail-$slot" ] && fail "test file /data/health-check-fail-$slot"
+
+systemctl is-active --quiet sysmon.service || fail "sysmon.service is not running"
+
+touch /data/.health-check && rm -f /data/.health-check || fail "/data is not writable"
+
+echo "health-check: slot $slot OK"

@@ -5,6 +5,12 @@
 #include <syslog.h>
 #include <unistd.h>
 
+#ifdef WITH_SYSTEMD
+#include <systemd/sd-daemon.h>
+#else
+#define sd_notify(unset, state) ((void)0)   /* SysVinit build: no systemd */
+#endif
+
 static volatile sig_atomic_t running = 1;
 
 static void handle_signal(int sig)
@@ -58,11 +64,13 @@ int main(int argc, char *argv[])
 
     openlog("sysmon", LOG_PID, LOG_DAEMON);
     syslog(LOG_INFO, "started, interval %d s", interval);
+    sd_notify(0, "READY=1");        /* started: systemd may go on */
 
     while (running) {
         read_loadavg(load, sizeof(load));
         syslog(LOG_INFO, "load: %s, mem available: %ld kB",
                load, mem_available_kb());
+        sd_notify(0, "WATCHDOG=1");     /* "still alive", every loop */
         sleep(interval);
     }
 

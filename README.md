@@ -55,6 +55,7 @@ systemd). It contains:
 | `recipes-core/images/my-bootfs.bb` | The boot partition of a slot: an ext4 image with only the signed FIT (kernel, DTB, dm-verity initramfs) |
 | `recipes-core/root-ssh-key/` | The public SSH key for root logins (key only) |
 | `recipes-core/dropbear/` | Dropbear with key-only logins and its host key on `/data` |
+| `recipes-core/health-check/` | Health check that must pass before RAUC marks the booted slot good; a failure reboots |
 | `recipes-core/bundles/my-bundle.bb` | A signed RAUC update bundle (`verity` format) with the rootfs of `my-image` (with its hash tree) and the boot partition |
 | `kas/` | kas build files: pinned layers and settings, development settings, an example for the local signing settings |
 | `recipes-kernel/mymod/` | An out-of-tree kernel module (`inherit module`) with a parameter, loaded automatically at boot |
@@ -904,6 +905,23 @@ Goal: a release build without development settings. Follow-along guide:
 - Root's home is `/root` in this setup, not `/home/root`: my first check looked in the wrong place.
 - Board test with SSH is still open: there is no network on the board yet.
 
+### Step 19: Robust updates: health check, watchdog, anti-rollback
+
+Goal: mark a slot good only if the product works, notice a hung application, refuse older
+bundles. Follow-along guide: [docs/19-robust-updates.md](docs/19-robust-updates.md).
+
+- Until now `rauc-mark-good` ran as soon as `boot-complete.target` was reached, so "booted" meant
+  "good". A `health-check` service is now `RequiredBy=boot-complete.target`: `sysmon` must run and
+  `/data` must be writable. On failure, `FailureAction=reboot` makes U-Boot count a failed
+  attempt, and after three the other slot boots. A test file per slot
+  (`/data/health-check-fail-A`) avoids failing both slots at once.
+- `sysmon` sends `sd_notify("WATCHDOG=1")` every loop; `WatchdogSec=30` restarts it when it hangs,
+  and three starts in five minutes reboot the board (`StartLimitAction=reboot`). `libsystemd` is
+  linked only when the distro has systemd (`PACKAGECONFIG`).
+- Anti-rollback is built into RAUC: `min-bundle-version` in `system.conf`, filled in from
+  `DISTRO_VERSION` at build time.
+- Checked in the built image; the board tests are still open.
+
 ### Other things learned along the way
 
 - `Ctrl-Z` pauses a command instead of cancelling it. A paused `devtool build` kept
@@ -959,10 +977,10 @@ Next, production level, in this order:
          there is no other user, so nobody can log in; boot messages stay visible for service
    - [ ] Release image without test and debug packages
 3. **Robust updates**
-   - [ ] Mark a slot good only after a health check (service running, network up), not right
-         after boot
-   - [ ] systemd watchdog for the main services
-   - [ ] Anti-rollback: refuse bundles older than the installed version
+   - [x] Mark a slot good only after a health check, not right after boot (board test open)
+   - [x] systemd watchdog for the main service (`sysmon`, board test open)
+   - [x] Anti-rollback: refuse bundles older than the installed version (`min-bundle-version`,
+         board test open)
 4. **CI/CD**
    - [ ] GitHub Actions: lint, `yocto-check-layer`, parse check (`bitbake -p`)
    - [ ] Full build of image, RAUC bundle and SDK on a self-hosted runner (own pushes only,

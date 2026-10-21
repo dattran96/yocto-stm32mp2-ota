@@ -17,6 +17,7 @@ IMAGE_INSTALL = " \
     data-journal \
     cryptsetup \
     root-ssh-key \
+    health-check \
 "
 
 IMAGE_FEATURES += "ssh-server-dropbear"

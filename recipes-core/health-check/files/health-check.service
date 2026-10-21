@@ -1,0 +1,17 @@
+[Unit]
+Description=Health check: RAUC marks the slot good only if this passes
+# boot-complete.target is reached only if every unit RequiredBy= it succeeds;
+# rauc-mark-good.service waits for boot-complete.target.
+Before=boot-complete.target
+After=sysmon.service
+RequiresMountsFor=/data
+# Failed check: reboot. U-Boot counts the attempt; after 3 it boots the other slot.
+FailureAction=reboot
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/health-check
+
+[Install]
+RequiredBy=boot-complete.target

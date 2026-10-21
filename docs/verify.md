@@ -322,6 +322,9 @@ PC$ ls tmp/work/*/<recipe>/*/temp/
 | RAUC slot status | `cat /data/rauc/central.raucs` | a `[slot.rootfs.N]` section per installed slot, `bundle.version`, `sha256` of the rootfs image |
 | SSH key only? (since step 18) | `cat /etc/default/dropbear`, `ls -l /root/.ssh` | `DROPBEAR_EXTRA_ARGS="-s"`; `authorized_keys` `-rw-------` |
 | Host key on `/data`? | `ls -l /data/dropbear`, `systemctl status dropbearkey` | `dropbear_rsa_host_key`; the service runs only on the first boot (`condition unmet` later) |
+| Health check passed? (since step 19) | `systemctl status health-check`, `rauc status` | `active (exited)`, `health-check: slot X OK`; slot `good` |
+| App watchdog | `systemctl show sysmon -p WatchdogUSec -p Type` | `WatchdogUSec=30s`, `Type=notify` |
+| Anti-rollback limit | `grep min-bundle /etc/rauc/system.conf` | `min-bundle-version=` the running `VERSION_ID` |
 | Secure boot state | first console lines after power-on | `TRUSTED_BOARD_BOOT support enabled`, `ROTPK is not deployed ...` on an open chip |
 
 In U-Boot:

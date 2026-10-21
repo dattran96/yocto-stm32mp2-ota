@@ -1,9 +1,16 @@
 [Unit]
 Description=System monitor daemon
 After=syslog.target
+# 3 restarts within 5 minutes: give up and reboot, so U-Boot can count the attempt
+StartLimitIntervalSec=300
+StartLimitBurst=3
+StartLimitAction=reboot
 
 [Service]
+Type=notify
 ExecStart=/usr/sbin/sysmon -i 10
+# No "WATCHDOG=1" for 30 s (sysmon sends it every 10 s): systemd kills and restarts it
+WatchdogSec=30
 Restart=on-failure
 
 [Install]
