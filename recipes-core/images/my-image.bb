@@ -16,12 +16,13 @@ IMAGE_INSTALL = " \
     rauc \
     data-journal \
     cryptsetup \
+    root-ssh-key \
 "
 
 IMAGE_FEATURES += "ssh-server-dropbear"
 # Read-only rootfs (preparation for dm-verity): fstab mounts / as ro,
 # /var/lib, /var/cache and /var/spool become tmpfs copies (volatile-binds),
-# Dropbear keeps its host key in /var/lib/dropbear.
+# Dropbear keeps its host key on /data (dropbear bbappend).
 IMAGE_FEATURES += "read-only-rootfs"
 # STM32MP: two rootfs partitions (rootfs1/rootfs2) for RAUC A/B updates.
 # Same as ST's default in st-machine-image-partition-stm32mp.inc,

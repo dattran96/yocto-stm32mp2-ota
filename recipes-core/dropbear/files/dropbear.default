@@ -1,0 +1,5 @@
+# -s: no password logins, SSH keys only. No -w, so root may log in (with a key).
+DROPBEAR_EXTRA_ARGS="-s"
+# Host key on the persistent /data partition: the rootfs is read-only and
+# /var/lib is in RAM, so a key there would change on every boot.
+DROPBEAR_RSAKEY_DIR=/data/dropbear

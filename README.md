@@ -53,6 +53,8 @@ systemd). It contains:
 | `recipes-core/initramfs-module-verity/` | An `initramfs-framework` module that opens the rootfs slot with dm-verity and mounts it, or reboots |
 | `recipes-crypto/cryptsetup/` | Removes cryptsetup's `udev` and `ssh-token` options, which pulled 5 MB into the initramfs |
 | `recipes-core/images/my-bootfs.bb` | The boot partition of a slot: an ext4 image with only the signed FIT (kernel, DTB, dm-verity initramfs) |
+| `recipes-core/root-ssh-key/` | The public SSH key for root logins (key only) |
+| `recipes-core/dropbear/` | Dropbear with key-only logins and its host key on `/data` |
 | `recipes-core/bundles/my-bundle.bb` | A signed RAUC update bundle (`verity` format) with the rootfs of `my-image` (with its hash tree) and the boot partition |
 | `kas/` | kas build files: pinned layers and settings, development settings, an example for the local signing settings |
 | `recipes-kernel/mymod/` | An out-of-tree kernel module (`inherit module`) with a parameter, loaded automatically at boot |
@@ -885,6 +887,23 @@ Goal: build the board image from this repository alone, with pinned layers and n
   hash-equivalence database (`cache/hashserv.db`) is per build folder. For CI, builds should share
   a hash server.
 
+### Step 18: Development and release builds, hardening (in progress)
+
+Goal: a release build without development settings. Follow-along guide:
+[docs/18-release-hardening.md](docs/18-release-hardening.md).
+
+- Looked at what `debug-tweaks` does: empty root password, Dropbear `-B` (empty passwords
+  accepted). Without it poky locks root and keeps Dropbear's `-w` (no root login), so removing it
+  alone would lock the board.
+- Release build = kas without `kas/debug.yml`. A separate board key (`id_ed25519_stm32`); its
+  public half goes into the image with a small recipe (`root-ssh-key`, `${ROOT_HOME}/.ssh`).
+  Dropbear runs with `-s`: no password logins at all, in the development build too.
+- The Dropbear host key was in `/var/lib/dropbear`, which is in RAM since step 15b, so it changed
+  every boot. It now lives on `/data/dropbear`; a systemd drop-in resets `dropbearkey.service`'s
+  conditions (an empty `ConditionPathExists=`) and waits for `/data`.
+- Root's home is `/root` in this setup, not `/home/root`: my first check looked in the wrong place.
+- Board test with SSH is still open: there is no network on the board yet.
+
 ### Other things learned along the way
 
 - `Ctrl-Z` pauses a command instead of cancelling it. A paused `devtool build` kept
@@ -933,9 +952,12 @@ Next, production level, in this order:
    - [x] kas file with all layers pinned to exact git revisions; one command sets up and builds
    - [ ] Optional: bit-identical kernel (the built-in config copy is compressed differently)
 2. **Development and release builds, hardening**
-   - [ ] Release configuration without development settings (no empty root password, no
-         debug tools, serial login off)
-   - [ ] SSH with keys only; Dropbear host key on `/data`, so it stays the same across updates
+   - [x] Release build without `debug-tweaks` (kas without `kas/debug.yml`)
+   - [x] SSH with keys only; Dropbear host key on `/data`, so it stays the same across updates
+         (built; board test needs network)
+   - [x] Serial login in the release build: the prompt stays, but root is locked (`root:*`) and
+         there is no other user, so nobody can log in; boot messages stay visible for service
+   - [ ] Release image without test and debug packages
 3. **Robust updates**
    - [ ] Mark a slot good only after a health check (service running, network up), not right
          after boot
@@ -975,4 +997,14 @@ Later:
       repository
 - [ ] Media player controlled with an IR remote
 - [ ] Optional: Mender on QEMU, compared with RAUC
+- [ ] Fully closed serial console for the release build, together with closing the chip:
+  - no login prompt: no `serial-getty@ttySTM0` and `getty@tty1` (ST sets `SERIAL_CONSOLES` with a
+    hard `=` in `st-machine-common-stm32mp.inc`, so it needs `:forcevariable` or a bbappend, only
+    in the release configuration)
+  - quiet kernel console: `quiet` / `loglevel=` or no `console=` in U-Boot's `bootargs`
+  - U-Boot console locked: no key stops autoboot (`bootdelay=-2` or `CONFIG_AUTOBOOT_KEYED`), or
+    `silent` console
+  - TF-A and OP-TEE: release log level (`ST_TF_A_DEBUG_TRACE = "0"` is already forced when
+    signing)
+  - a way back for service: a development build signed with the same keys, installed by RAUC
 - [ ] Last, after all other lessons: key hash into the OTP fuses (irreversible)

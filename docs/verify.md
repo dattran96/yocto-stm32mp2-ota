@@ -320,6 +320,8 @@ PC$ ls tmp/work/*/<recipe>/*/temp/
 | Slot groups | `rauc status` | `[bootfs.x]` indented under `[rootfs.x]`; a slot with no attempts left is `boot status: bad` |
 | ext4 block size of an image (PC) | `dumpe2fs -h <image> \| grep "Block size"` | must be ≥ the dm-verity data block size |
 | RAUC slot status | `cat /data/rauc/central.raucs` | a `[slot.rootfs.N]` section per installed slot, `bundle.version`, `sha256` of the rootfs image |
+| SSH key only? (since step 18) | `cat /etc/default/dropbear`, `ls -l /root/.ssh` | `DROPBEAR_EXTRA_ARGS="-s"`; `authorized_keys` `-rw-------` |
+| Host key on `/data`? | `ls -l /data/dropbear`, `systemctl status dropbearkey` | `dropbear_rsa_host_key`; the service runs only on the first boot (`condition unmet` later) |
 | Secure boot state | first console lines after power-on | `TRUSTED_BOARD_BOOT support enabled`, `ROTPK is not deployed ...` on an open chip |
 
 In U-Boot:
