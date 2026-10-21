@@ -54,6 +54,7 @@ systemd). It contains:
 | `recipes-crypto/cryptsetup/` | Removes cryptsetup's `udev` and `ssh-token` options, which pulled 5 MB into the initramfs |
 | `recipes-core/images/my-bootfs.bb` | The boot partition of a slot: an ext4 image with only the signed FIT (kernel, DTB, dm-verity initramfs) |
 | `recipes-core/bundles/my-bundle.bb` | A signed RAUC update bundle (`verity` format) with the rootfs of `my-image` (with its hash tree) and the boot partition |
+| `kas/` | kas build files: pinned layers and settings, development settings, an example for the local signing settings |
 | `recipes-kernel/mymod/` | An out-of-tree kernel module (`inherit module`) with a parameter, loaded automatically at boot |
 | `recipes-kernel/linux/` | `.bbappend`s for `linux-yocto` (QEMU) and `linux-stm32mp` (ST board) that add the same kernel config fragment (exFAT as a module), plus the kernel options RAUC needs for the ST kernel, and a second signed FIT with the dm-verity initramfs |
 | `sdk-example/` | A program cross-compiled outside BitBake with the SDK generated from `my-image` |
@@ -99,6 +100,18 @@ modprobe exfat             # exFAT module enabled by a kernel config fragment
 ```
 
 ### On the STM32MP257F-DK board
+
+With kas (since step 17), next to a clone of this repository as `meta-mylayer`:
+
+```bash
+python3 -m venv ~/kas-venv && ~/kas-venv/bin/pip install kas
+cp meta-mylayer/kas/signing.yml.example meta-mylayer/kas/signing.yml   # then set your key paths
+mkdir kas-work && cd kas-work
+read -rs SIGN_KEY_PASS; export SIGN_KEY_PASS
+~/kas-venv/bin/kas build ../meta-mylayer/kas/stm32mp25-disco.yml:../meta-mylayer/kas/debug.yml:../meta-mylayer/kas/signing.yml
+```
+
+By hand (before step 17):
 
 ```bash
 git clone -b scarthgap https://git.openembedded.org/meta-openembedded
@@ -850,6 +863,28 @@ signed together with the kernel. Follow-along guide:
   (`data block 0 is corrupted`), U-Boot's counter reached 0 and A booted 1.9 by itself;
   `rauc status` showed B as `bad`. With the byte written back, B booted 1.10 again.
 
+### Step 17: Reproducible build with kas
+
+Goal: build the board image from this repository alone, with pinned layers and no hand-written
+`local.conf`. Follow-along guide: [docs/17-kas-build.md](docs/17-kas-build.md).
+
+- `kas/stm32mp25-disco.yml` pins poky, meta-openembedded, meta-st-stm32mp and meta-rauc to the
+  full commit IDs of my hand-made setup and carries the `local.conf` settings. `kas/debug.yml`
+  adds `debug-tweaks` for desk builds. The key paths are in `kas/signing.yml`, which is in
+  `.gitignore` (`kas/signing.yml.example` shows what it needs); the signing password is typed into
+  the shell (`read -rs`) and passed with `env: SIGN_KEY_PASS: null`.
+- First error: `${HOME}` in `signing.yml` pointed into `/tmp`. kas runs BitBake with its own
+  temporary `HOME`, so the paths there must be absolute.
+- The kas build without `debug.yml` gave a different root hash: root login was locked. The
+  `debug-tweaks` line had been hidden in `local.conf`, which is exactly what kas makes visible.
+- With `debug.yml`, all files of the rootfs except one were identical. The exception is the old,
+  unused FIT in `/boot`: same kernel config, same version string, same size, but the kernel's
+  built-in gzip copy of its config (`IKCFG_ST`) was compressed into different bytes. The setup is
+  reproduced exactly; the kernel binary is not bit-identical.
+- The new build folder rebuilt ~570 tasks although recipes and variables were the same: the
+  hash-equivalence database (`cache/hashserv.db`) is per build folder. For CI, builds should share
+  a hash server.
+
 ### Other things learned along the way
 
 - `Ctrl-Z` pauses a command instead of cancelling it. A paused `devtool build` kept
@@ -895,7 +930,8 @@ Done so far:
 Next, production level, in this order:
 
 1. **Reproducible build**
-   - [ ] kas file with all layers pinned to exact git revisions; one command sets up and builds
+   - [x] kas file with all layers pinned to exact git revisions; one command sets up and builds
+   - [ ] Optional: bit-identical kernel (the built-in config copy is compressed differently)
 2. **Development and release builds, hardening**
    - [ ] Release configuration without development settings (no empty root password, no
          debug tools, serial login off)
@@ -910,6 +946,8 @@ Next, production level, in this order:
    - [ ] Full build of image, RAUC bundle and SDK on a self-hosted runner (own pushes only,
          never pull requests from forks)
    - [ ] Signing: development key in CI, release key kept apart (`rauc resign`)
+   - [ ] Shared hash-equivalence server (`BB_HASHSERVE_UPSTREAM`) and sstate, so new build
+         folders reuse the cache
    - [ ] Automatic checks of the results: `rauc info` (signature, compatible, version), a test
          build of `sdk-example/` with the SDK
 5. **SBOM, CVEs and licenses**

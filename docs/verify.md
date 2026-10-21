@@ -270,6 +270,20 @@ cmp <(debugfs -R "cat /fitImage" $D/my-bootfs-stm32mp25-disco.ext4 2>/dev/null) 
 - U-Boot loads it from there: `strings $D/u-boot/u-boot-nodtb-stm32mp25-disco-*.bin | grep "^rauc_load="`
   shows `${bootpartname} bootpart` and `/fitImage`.
 
+## kas build (since step 17)
+
+```
+cd ~/Dokumente/yocto/kas-work
+grep -E "^(MACHINE|DISTRO|EXTRA_IMAGE_FEATURES|SIGN_ENABLE)" build/conf/local.conf
+git -C poky rev-parse HEAD
+git -C ../meta-mylayer check-ignore kas/signing.yml
+```
+- **Expected:** the settings from the kas files (with `kas/debug.yml`: `EXTRA_IMAGE_FEATURES ?=
+  "debug-tweaks"`), the pinned commit `b2c16f1e...`, and `kas/signing.yml` (ignored by git).
+- No `*_PASS` value in `build/conf/local.conf`: `grep -c "PASS = \"[^$]" build/conf/local.conf`
+  prints `0` (the M33 lines only refer to `${SIGN_KEY_PASS}`).
+- Compare two builds with the root hash in `.verity-params`; see guide 17d to find what differs.
+
 ## Logs when a task fails
 
 ```

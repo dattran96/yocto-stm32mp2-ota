@@ -1,0 +1,26 @@
+# Copy to kas/signing.yml (ignored by git) and adapt the paths. Use absolute
+# paths: kas runs BitBake with its own temporary HOME, so ${HOME} does not work.
+# The passwords are not in any file: export them in the shell before
+# "kas build" (see env below).
+header:
+  version: 14
+
+env:
+  SIGN_KEY_PASS: null
+
+local_conf_header:
+  signing: |
+    RAUC_KEY_FILE = "/path/to/rauc/development-1.key.pem"
+    RAUC_CERT_FILE = "/path/to/rauc/development-1.cert.pem"
+    UBOOT_SIGN_ENABLE = "1"
+    UBOOT_SIGN_KEYDIR = "/path/to/fit-keys"
+    UBOOT_SIGN_KEYNAME = "fitconf"
+    SIGN_ENABLE = "1"
+    SIGN_TOOL = "/path/to/STM32_SigningTool_CLI"
+    SIGN_KEY = "/path/to/stm32mp/privateKey00.pem"
+    SIGN_KEY_PUB = "/path/to/stm32mp/publicKey00.pem"
+    SIGN_M33DDR_KEY = "/path/to/m33ddr.key.pem"
+    SIGN_M33FW_KEY = "/path/to/m33fw.key.pem"
+    # Same password as SIGN_KEY (change if your M33 keys have their own)
+    SIGN_M33DDR_KEY_PASS = "${SIGN_KEY_PASS}"
+    SIGN_M33FW_KEY_PASS = "${SIGN_KEY_PASS}"

@@ -1,0 +1,9 @@
+# Development settings: root without password and other debug-tweaks.
+# Only for the desk, never for devices in the field.
+#   kas build kas/stm32mp25-disco.yml:kas/debug.yml:kas/signing.yml
+header:
+  version: 14
+
+local_conf_header:
+  debug: |
+    EXTRA_IMAGE_FEATURES ?= "debug-tweaks"

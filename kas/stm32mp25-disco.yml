@@ -1,0 +1,57 @@
+# Reproducible build of my-image and my-bundle for the STM32MP257F-DK.
+#   kas build kas/stm32mp25-disco.yml:kas/signing.yml
+# The signing settings are in kas/signing.yml, which is not in git
+# (example: kas/signing.yml.example).
+header:
+  version: 14
+
+machine: stm32mp25-disco
+distro: mydistro
+target:
+  - my-image
+  - my-bundle
+
+repos:
+  # This repository; no url, so kas uses it as it is
+  meta-mylayer:
+
+  poky:
+    url: https://git.yoctoproject.org/poky
+    branch: scarthgap
+    commit: b2c16f1e69130558574e1363aff944647fa9cd11
+    layers:
+      meta:
+      meta-poky:
+      meta-yocto-bsp:
+
+  meta-openembedded:
+    url: https://github.com/openembedded/meta-openembedded.git
+    branch: scarthgap
+    commit: 0f00f8b9a21950640da8c5707343e5540133f86e
+    layers:
+      meta-oe:
+      meta-python:
+
+  # Tag openstlinux-6.6-yocto-scarthgap-mpu-v26.06.10
+  meta-st-stm32mp:
+    url: https://github.com/STMicroelectronics/meta-st-stm32mp.git
+    branch: scarthgap
+    commit: 49046b2a0ad4dc29117025c94838b9befff86f23
+
+  meta-rauc:
+    url: https://github.com/rauc/meta-rauc.git
+    branch: scarthgap
+    commit: d63878f20eba7a85ecf53566e7a3377e78bb46ac
+
+local_conf_header:
+  board: |
+    CONF_VERSION = "2"
+    INHERIT += "rm_work"
+    MACHINE_FEATURES:append = " nogpu fit"
+    # No extlinux boot menu: U-Boot boots the signed FIT (stm32mp2.env)
+    ST_EXTLINUX_PACKAGE = ""
+    STM32MP_BOOTFS_MOUNTPOINT = "/bootfs"
+    # Signed FIT: room in U-Boot's DTB for the public key
+    UBOOT_MKIMAGE_DTCOPTS = "-I dts -O dtb -p 2000"
+    UBOOT_DTB_BINARY = ""
+    SIGN_COPRO_ENABLE = "0"
