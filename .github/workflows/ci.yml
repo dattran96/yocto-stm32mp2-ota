@@ -1,0 +1,41 @@
+# Checks on every push and pull request, on GitHub's runners. No signing keys
+# are needed or available here: the full, signed build runs on my PC.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install oelint-adv
+        run: pip install oelint-adv==9.11.2
+      - name: Lint report (all findings, does not fail)
+        run: scripts/lint.sh --report
+      - name: Lint gate (errors only)
+        run: scripts/lint.sh
+
+  parse:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: meta-mylayer
+      - name: Install kas
+        run: pip install kas==5.5
+      # kas-container runs BitBake in kas's container image, which has all
+      # host tools Yocto needs. kas clones the layers at the pinned commits.
+      - name: Parse all recipes (kas file without signing settings)
+        run: |
+          mkdir work
+          cd work
+          kas-container shell ../meta-mylayer/kas/stm32mp25-disco.yml -c "bitbake -p"

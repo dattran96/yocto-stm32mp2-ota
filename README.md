@@ -1,5 +1,7 @@
 # yocto-stm32mp2-ota
 
+[![CI](https://github.com/dattran96/yocto-stm32mp2-ota/actions/workflows/ci.yml/badge.svg)](https://github.com/dattran96/yocto-stm32mp2-ota/actions/workflows/ci.yml)
+
 Embedded Linux with Yocto on the **STM32MP257F-DK** board: my own distro and image, board
 bring-up with ST's BSP, and **A/B over-the-air updates with RAUC**, tested on real hardware,
 including automatic rollback.
@@ -982,7 +984,9 @@ Next, production level, in this order:
    - [x] Anti-rollback: refuse bundles older than the installed version (`min-bundle-version`,
          board test open)
 4. **CI/CD**
-   - [ ] GitHub Actions: lint, `yocto-check-layer`, parse check (`bitbake -p`)
+   - [ ] GitHub Actions: lint (`oelint-adv`), parse check (`bitbake -p` with kas-container)
+   - [ ] Yocto-compatible layer: limit the bbappends to `mydistro` (`:mydistro` overrides), so the
+         layer changes nothing for other distros; then `yocto-check-layer` in CI
    - [ ] Full build of image, RAUC bundle and SDK on a self-hosted runner (own pushes only,
          never pull requests from forks)
    - [ ] Signing: development key in CI, release key kept apart (`rauc resign`)
