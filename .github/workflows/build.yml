@@ -1,0 +1,68 @@
+# Full image build on my own PC (self-hosted runner, label "yocto").
+# Only pushes to main and manual starts run it, never pull requests: on a
+# public repo a pull request from a fork could otherwise run its code on my PC.
+# The runner runs as its own Linux user without access to my signing keys,
+# so this build is not signed (see docs/20-ci.md).
+name: Build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One build at a time; a newer push cancels the older build
+concurrency:
+  group: build
+  cancel-in-progress: true
+
+jobs:
+  image:
+    if: github.repository == 'dattran96/yocto-stm32mp2-ota'
+    runs-on: [self-hosted, linux, yocto]
+    timeout-minutes: 360
+    env:
+      # BitBake runs in kas's container (rootless podman), so every build
+      # uses the same host tools, like the parse job in ci.yml
+      KAS_CONTAINER_ENGINE: podman
+      DL_DIR: /srv/yocto/downloads
+      SSTATE_DIR: ${{ github.workspace }}/../sstate
+      DEPLOY: work/build/tmp/deploy/images/stm32mp25-disco
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: meta-mylayer
+      - name: Build my-image
+        run: |
+          export XDG_RUNTIME_DIR=/run/user/$(id -u)
+          mkdir -p work
+          cd work
+          # The shared sstate cache goes in read-only (see kas/ci.yml)
+          ~/kas-venv/bin/kas-container \
+            --runtime-args "-v /srv/yocto/sstate:/srv/yocto/sstate:ro" \
+            build \
+            ../meta-mylayer/kas/stm32mp25-disco.yml:../meta-mylayer/kas/debug.yml:../meta-mylayer/kas/ci.yml \
+            --target my-image
+      - name: Image file list and sizes
+        run: ls -lL $DEPLOY/my-image-stm32mp25-disco.*.ext4 | tee -a "$GITHUB_STEP_SUMMARY"
+      # Everything STM32CubeProgrammer needs to flash an empty board:
+      # the flash layouts (.tsv) and the files they point to
+      - name: Pack the flash image
+        run: |
+          tar -chf flash-image.tar -C $DEPLOY \
+            flashlayout_my-image arm-trusted-firmware fip \
+            my-bootfs-stm32mp25-disco.ext4 \
+            my-image-stm32mp25-disco.splitted-rootfs.ext4.verity \
+            my-image-stm32mp25-disco.splitted-userfs.ext4
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flash-image
+          path: flash-image.tar
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: my-image-manifest
+          path: ${{ env.DEPLOY }}/my-image-stm32mp25-disco.rootfs.manifest
+          retention-days: 14
