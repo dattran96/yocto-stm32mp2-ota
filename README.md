@@ -945,7 +945,8 @@ Follow-along guide: [docs/20-ci.md](docs/20-ci.md).
   image (7 days) and the manifest.
 - The first CI build found host contamination: libtiff turns on LERC by itself, so `tiff-native`
   from my PC linked to the PC's `libLerc.so.4`, and that sstate broke OP-TEE's Pillow in the
-  container. Fixed with `--disable-lerc` in a tiff bbappend.
+  container. Fixed with `--disable-lerc` in a tiff bbappend. Second run: success, 38 min, 184 of
+  6180 tasks built again.
 
 ### Other things learned along the way
 
