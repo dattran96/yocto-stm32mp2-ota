@@ -59,9 +59,11 @@ systemd). It contains:
 | `recipes-core/dropbear/` | Dropbear with key-only logins and its host key on `/data` |
 | `recipes-core/health-check/` | Health check that must pass before RAUC marks the booted slot good; a failure reboots |
 | `recipes-core/bundles/my-bundle.bb` | A signed RAUC update bundle (`verity` format) with the rootfs of `my-image` (with its hash tree) and the boot partition |
-| `kas/` | kas build files: pinned layers and settings, development settings, an example for the local signing settings |
+| `kas/` | kas build files: pinned layers and settings, development settings, CI settings (read-only sstate mirror), an example for the local signing settings |
+| `.github/workflows/` | CI: lint and parse on GitHub's runners for every push and pull request; the full image build on my PC (self-hosted runner) for pushes to `main` |
 | `recipes-kernel/mymod/` | An out-of-tree kernel module (`inherit module`) with a parameter, loaded automatically at boot |
 | `recipes-kernel/linux/` | `.bbappend`s for `linux-yocto` (QEMU) and `linux-stm32mp` (ST board) that add the same kernel config fragment (exFAT as a module), plus the kernel options RAUC needs for the ST kernel, and a second signed FIT with the dm-verity initramfs |
+| `recipes-multimedia/libtiff/` | A `.bbappend` that switches off LERC in libtiff, so `tiff-native` does not link to a library of the build PC (host contamination found by CI) |
 | `sdk-example/` | A program cross-compiled outside BitBake with the SDK generated from `my-image` |
 | `docs/` | Follow-along guides for each lesson, and a cheat sheet for checking build results |
 
@@ -937,6 +939,13 @@ Follow-along guide: [docs/20-ci.md](docs/20-ci.md).
   login.
 - The linter's real finding: the bbappends are not limited to `mydistro`, so the layer would
   change other distros too (a plan item, together with `yocto-check-layer`).
+- Full build on my PC as a self-hosted runner (GitHub's free runners have 4 cores, ~14 GB disk
+  and 6 hours): only on pushes to `main`, as its own user `ghrunner` without access to the keys,
+  in kas's container with rootless podman, the shared sstate mounted read-only. It keeps the flash
+  image (7 days) and the manifest.
+- The first CI build found host contamination: libtiff turns on LERC by itself, so `tiff-native`
+  from my PC linked to the PC's `libLerc.so.4`, and that sstate broke OP-TEE's Pillow in the
+  container. Fixed with `--disable-lerc` in a tiff bbappend.
 
 ### Other things learned along the way
 

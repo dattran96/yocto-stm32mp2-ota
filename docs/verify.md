@@ -284,6 +284,21 @@ git -C ../meta-mylayer check-ignore kas/signing.yml
   prints `0` (the M33 lines only refer to `${SIGN_KEY_PASS}`).
 - Compare two builds with the root hash in `.verity-params`; see guide 17d to find what differs.
 
+## CI runner (since step 20c)
+
+```
+GH_HOST=github.com gh api repos/dattran96/yocto-stm32mp2-ota/actions/runners --jq '.runners[] | "\(.name) \(.status) \([.labels[].name]|join(","))"'
+GH_HOST=github.com gh api repos/dattran96/yocto-stm32mp2-ota/actions/permissions/fork-pr-contributor-approval --jq .approval_policy
+sudo -u ghrunner ls /home/dat
+ls -l ~/yocto-sstate ~/yocto-downloads
+GH_HOST=github.com gh run list -R dattran96/yocto-stm32mp2-ota -w Build -L 3
+```
+- **Expected:** `yocto-builder online self-hosted,Linux,X64,yocto`; `all_external_contributors`;
+  `Permission denied`; `yocto-sstate -> /srv/yocto/sstate` and `yocto-downloads ->
+  /srv/yocto/downloads`; `completed success` for the last push to `main`.
+- No LERC in `tiff-native` (step 20c fix): in a build folder,
+  `ldd tmp/sysroots-components/x86_64/tiff-native/usr/lib/libtiff.so | grep -c -i lerc` prints `0`.
+
 ## Logs when a task fails
 
 ```
