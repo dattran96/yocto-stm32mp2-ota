@@ -31,6 +31,7 @@ can follow yourself. The learning log says *what I did and what went wrong*; the
 | [17 Reproducible build with kas](17-kas-build.md) | Step 17 | PC (board build) |
 | [18 Development and release builds, hardening](18-release-hardening.md) | Step 18 | PC, board |
 | [19 Robust updates](19-robust-updates.md) | Step 19 | PC, board |
+| [20 CI/CD](20-ci.md) | Step 20 | PC, GitHub |
 
 ## Conventions
 

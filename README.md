@@ -924,6 +924,20 @@ bundles. Follow-along guide: [docs/19-robust-updates.md](docs/19-robust-updates.
   `DISTRO_VERSION` at build time.
 - Checked in the built image; the board tests are still open.
 
+### Step 20: CI/CD (in progress)
+
+Goal: check every push automatically, later build image, bundle and SDK in a pipeline.
+Follow-along guide: [docs/20-ci.md](docs/20-ci.md).
+
+- GitHub Actions with two jobs: `oelint-adv` (report and gate; the switched-off rules and the
+  reason are in `scripts/lint.sh`), and a parse check of all 2555 recipes with
+  `kas-container ... bitbake -p`, from the kas file without signing settings. First run: both
+  green, 11 s and 3 min.
+- The first push was refused: changing a workflow file needs the `workflow` scope on the `gh`
+  login.
+- The linter's real finding: the bbappends are not limited to `mydistro`, so the layer would
+  change other distros too (a plan item, together with `yocto-check-layer`).
+
 ### Other things learned along the way
 
 - `Ctrl-Z` pauses a command instead of cancelling it. A paused `devtool build` kept
@@ -984,7 +998,7 @@ Next, production level, in this order:
    - [x] Anti-rollback: refuse bundles older than the installed version (`min-bundle-version`,
          board test open)
 4. **CI/CD**
-   - [ ] GitHub Actions: lint (`oelint-adv`), parse check (`bitbake -p` with kas-container)
+   - [x] GitHub Actions: lint (`oelint-adv`), parse check (`bitbake -p` with kas-container)
    - [ ] Yocto-compatible layer: limit the bbappends to `mydistro` (`:mydistro` overrides), so the
          layer changes nothing for other distros; then `yocto-check-layer` in CI
    - [ ] Full build of image, RAUC bundle and SDK on a self-hosted runner (own pushes only,
