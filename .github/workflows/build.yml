@@ -41,7 +41,7 @@ jobs:
           cd work
           # The shared sstate cache goes in read-only (see kas/ci.yml)
           ~/kas-venv/bin/kas-container \
-            --runtime-args "-v /srv/yocto/sstate:/srv/yocto/sstate:ro" \
+            --runtime-args "-v /srv/yocto/sstate:/srv/yocto/sstate:ro -v $GITHUB_WORKSPACE/meta-mylayer/.github/ci-gitconfig:/etc/gitconfig:ro" \
             build \
             ../meta-mylayer/kas/stm32mp25-disco.yml:../meta-mylayer/kas/debug.yml:../meta-mylayer/kas/ci.yml \
             --target my-image

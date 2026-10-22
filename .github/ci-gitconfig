@@ -1,0 +1,5 @@
+# Mounted as /etc/gitconfig in the CI build container. The shared download
+# folder belongs to my own user, so git would refuse its repositories
+# ("detected dubious ownership") when the runner user fetches.
+[safe]
+	directory = /downloads/*
