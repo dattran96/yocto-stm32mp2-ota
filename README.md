@@ -956,6 +956,10 @@ Follow-along guide: [docs/20-ci.md](docs/20-ci.md).
   meta-rauc: key and certificate are listed as `file-checksums` with `:False`, and BitBake leaves
   those out, so a new key did not change the task checksum and `do_bundle` came from sstate. Fixed
   in `my-bundle.bb` (certificate listed with `:True`); `bitbake-dumpsig` now shows it.
+- Release signing (notes only, nothing is shipped yet): CI has none of the four keys, and the
+  signatures are nested (FIT inside the bundle, the FIT key inside U-Boot), so `rauc resign` alone
+  is not enough. For this project a release would be built from the tag on my laptop with the keys
+  (way A); bigger teams use a signing server or HSM.
 
 ### Step 21: SBOM, CVEs and licenses
 
@@ -1051,7 +1055,8 @@ Next, production level, in this order:
          never pull requests from forks)
    - [ ] The SDK in CI, for releases
    - [x] Signing: CI test key for the bundle, my keys kept out of CI
-   - [ ] Release signing apart from CI (`rauc resign`)
+   - [x] Release signing apart from CI: written down (trusted machine, signing server, `rauc resign`)
+   - [ ] Optional: compare the root hash of a laptop release build with CI's (reproducible build)
    - [ ] Shared hash-equivalence server (`BB_HASHSERVE_UPSTREAM`) and sstate, so new build
          folders reuse the cache
    - [ ] Automatic checks of the results: `rauc info` (signature, compatible, version), a test
