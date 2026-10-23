@@ -1,6 +1,6 @@
 # Settings for the CI build on the self-hosted runner (.github/workflows/build.yml).
-#   kas-container --runtime-args "-v /srv/yocto/sstate:/srv/yocto/sstate:ro" \
-#     build kas/stm32mp25-disco.yml:kas/debug.yml:kas/ci.yml --target my-image
+#   kas-container --runtime-args "-v /srv/yocto/sstate:/srv/yocto/sstate:ro -v ~/ci-keys:/ci-keys:ro" \
+#     build kas/stm32mp25-disco.yml:kas/debug.yml:kas/ci.yml
 # The runner user can only read the shared sstate cache, so a CI job can never
 # change what my own (signed) builds take from it. New results go to the
 # runner's own SSTATE_DIR.
@@ -10,3 +10,7 @@ header:
 local_conf_header:
   ci: |
     SSTATE_MIRRORS = "file://.* file:///srv/yocto/sstate/PATH"
+    # CI test key for the RAUC bundle, mounted from the runner user's home.
+    # My board only trusts my development CA, so it refuses these bundles.
+    RAUC_KEY_FILE = "/ci-keys/ci.key.pem"
+    RAUC_CERT_FILE = "/ci-keys/ci.cert.pem"

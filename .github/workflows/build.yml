@@ -1,8 +1,10 @@
 # Full image build on my own PC (self-hosted runner, label "yocto").
 # Only pushes to main and manual starts run it, never pull requests: on a
 # public repo a pull request from a fork could otherwise run its code on my PC.
-# The runner runs as its own Linux user without access to my signing keys,
-# so this build is not signed (see docs/20-ci.md).
+# The runner runs as its own Linux user without access to my signing keys.
+# The image is not signed; the RAUC bundle is signed with a CI test key that
+# only the runner user can read and that my board does not trust
+# (see docs/20-ci.md).
 name: Build
 
 on:
@@ -30,21 +32,35 @@ jobs:
       DL_DIR: /srv/yocto/downloads
       SSTATE_DIR: ${{ github.workspace }}/../sstate
       DEPLOY: work/build/tmp/deploy/images/stm32mp25-disco
+      KAS_FILES: ../meta-mylayer/kas/stm32mp25-disco.yml:../meta-mylayer/kas/debug.yml:../meta-mylayer/kas/ci.yml
     steps:
       - uses: actions/checkout@v4
         with:
           path: meta-mylayer
-      - name: Build my-image
+      # Read-only mounts into the build container: the shared sstate cache
+      # (see kas/ci.yml), the CI test key, and a git setting for the shared
+      # downloads (see .github/ci-gitconfig)
+      - name: Container mounts
+        run: |
+          echo "MOUNTS=-v /srv/yocto/sstate:/srv/yocto/sstate:ro -v $HOME/ci-keys:/ci-keys:ro -v $GITHUB_WORKSPACE/meta-mylayer/.github/ci-gitconfig:/etc/gitconfig:ro" >> "$GITHUB_ENV"
+      - name: Build my-image and my-bundle
         run: |
           export XDG_RUNTIME_DIR=/run/user/$(id -u)
           mkdir -p work
           cd work
-          # The shared sstate cache goes in read-only (see kas/ci.yml)
-          ~/kas-venv/bin/kas-container \
-            --runtime-args "-v /srv/yocto/sstate:/srv/yocto/sstate:ro -v $GITHUB_WORKSPACE/meta-mylayer/.github/ci-gitconfig:/etc/gitconfig:ro" \
-            build \
-            ../meta-mylayer/kas/stm32mp25-disco.yml:../meta-mylayer/kas/debug.yml:../meta-mylayer/kas/ci.yml \
-            --target my-image
+          ~/kas-venv/bin/kas-container --runtime-args "$MOUNTS" build "$KAS_FILES"
+      # The bundle must verify against the CI test CA, with the right
+      # compatible string and version
+      - name: Check the bundle (rauc info)
+        run: |
+          export XDG_RUNTIME_DIR=/run/user/$(id -u)
+          cd work
+          ~/kas-venv/bin/kas-container --runtime-args "$MOUNTS" shell "$KAS_FILES" -c \
+            "bitbake -q -c addto_recipe_sysroot rauc-native && oe-run-native rauc-native rauc info --keyring=/ci-keys/ca.cert.pem tmp/deploy/images/stm32mp25-disco/my-bundle-stm32mp25-disco.raucb 2>&1" \
+            | tee rauc-info.txt
+          grep -q "^Compatible:.*'stm32mp257f-dk-mydistro'" rauc-info.txt
+          grep -q "Verified inline signature by 'O = yocto-stm32mp2-ota CI" rauc-info.txt
+          { echo '```'; grep -E "Verified|^Compatible|^Version|^Bundle Format" rauc-info.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
       - name: Image file list and sizes
         run: ls -lL $DEPLOY/my-image-stm32mp25-disco.*.ext4 | tee -a "$GITHUB_STEP_SUMMARY"
       # Everything STM32CubeProgrammer needs to flash an empty board:
@@ -60,6 +76,11 @@ jobs:
         with:
           name: flash-image
           path: flash-image.tar
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: my-bundle-ci-signed
+          path: ${{ env.DEPLOY }}/my-bundle-stm32mp25-disco.raucb
           retention-days: 7
       - uses: actions/upload-artifact@v4
         with:
