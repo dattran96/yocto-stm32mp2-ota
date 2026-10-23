@@ -1,0 +1,12 @@
+# CVE check: compare every recipe in the image with the NVD database of
+# known security holes (poky's cve-check class).
+#   kas build kas/stm32mp25-disco.yml:kas/cve.yml
+# The first build downloads the database (DL_DIR/CVE_CHECK, ~1 GB; without
+# an NVD API key this takes a while), later builds update it once a day.
+# Result: tmp/deploy/images/<machine>/my-image-<machine>.rootfs.json
+header:
+  version: 14
+
+local_conf_header:
+  cve: |
+    INHERIT += "cve-check"
