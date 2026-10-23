@@ -14,3 +14,6 @@ local_conf_header:
     # My board only trusts my development CA, so it refuses these bundles.
     RAUC_KEY_FILE = "/ci-keys/ci.key.pem"
     RAUC_CERT_FILE = "/ci-keys/ci.cert.pem"
+    # Delete each recipe's work folder when it is done (results stay in
+    # sstate): keeps the runner's build folder small, also with the SDK
+    INHERIT += "rm_work"
