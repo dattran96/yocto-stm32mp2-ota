@@ -135,6 +135,21 @@ jobs:
           path: ${{ env.DEPLOY }}/my-image-stm32mp25-disco.rootfs.manifest
           retention-days: 14
 
+      # After the reports are uploaded, so they can be read when a gate fails.
+      # Fail on a forbidden license (GPLv3 family, see .github/license-allow.txt)
+      # or a critical CVE that is not in .github/cve-baseline.txt (docs/21-*.md, 21d)
+      - name: CI gates (licenses, critical CVEs)
+        run: |
+          rc=0
+          meta-mylayer/scripts/ci-gates.py licenses \
+            work/build/tmp/deploy/licenses/stm32mp25_disco/my-image-stm32mp25-disco.rootfs/license.manifest \
+            --allow meta-mylayer/.github/license-allow.txt > gates.txt || rc=1
+          meta-mylayer/scripts/ci-gates.py cves $DEPLOY/my-image-stm32mp25-disco.rootfs.json \
+            --baseline meta-mylayer/.github/cve-baseline.txt >> gates.txt || rc=1
+          cat gates.txt
+          { echo "### CI gates"; echo '```'; cat gates.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          exit $rc
+
       # Releases only: the SDK for application developers
       - name: Build the SDK
         if: env.RELEASE == 'true'

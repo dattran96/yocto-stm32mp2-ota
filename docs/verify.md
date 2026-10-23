@@ -311,6 +311,7 @@ GH_HOST=github.com gh run list -R dattran96/yocto-stm32mp2-ota -w Build -L 3
 | What is in the image? | `scripts/sbom-summary.py <image>.rootfs.spdx.tar.zst > sbom.csv` | `recipe,version,license,cpe`, one line per recipe (about 110) |
 | Which licenses? | `scripts/sbom-summary.py --licenses <image>.rootfs.spdx.tar.zst` | counts, `MIT` first |
 | Known security holes? | `scripts/cve-summary.py <image>.rootfs.json` | `Unpatched`, `Patched`, `Ignored` counts, then the open CVEs |
+| CI gates pass? (since step 21d) | `scripts/ci-gates.py licenses <license.manifest> --allow .github/license-allow.txt`, `scripts/ci-gates.py cves <report> --baseline .github/cve-baseline.txt` | `License gate: OK`, `CVE gate: ... 0 new` |
 | GPLv3 packages in the image? | `grep -B3 "GPL-3" tmp/deploy/licenses/*/my-image-*/license.manifest \| grep "PACKAGE NAME"` | only `kbd-keymaps-pine`, plus `libgcc`/`libstdc++` (GCC exception) and the "or" licenses |
 
 ## Logs when a task fails

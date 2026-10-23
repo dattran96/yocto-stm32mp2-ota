@@ -1,0 +1,7 @@
+# Packages allowed in the image although their license is GPLv3, LGPLv3 or
+# AGPLv3 (checked by scripts/ci-gates.py). Every entry needs a reason.
+
+# Keymap for the PinePhone keyboard, pulled in by systemd's vconsole
+# (kbd-keymaps recommends it). Not needed on this board; a product would
+# remove it. Allowed while nothing is given to anyone (docs/21).
+kbd-keymaps-pine

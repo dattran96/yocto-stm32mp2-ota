@@ -975,7 +975,12 @@ Follow-along guide: [docs/21-sbom-cve-licenses.md](docs/21-sbom-cve-licenses.md)
 - First result: 2249 open CVEs, 2170 of them in ST's kernel. The kernel gives a CVE to nearly
   every fix, and the check compares only versions; poky's own kernel has an exclusion list for
   fixes already in its tree, ST's has none. Next highest: openssl, curl, openssh. The report also
-  misses some recipes the SBOM has (ncurses, sqlite3, python3): to be found out in 21d.
+  misses some recipes the SBOM has (ncurses, sqlite3, python3). The check runs for them (CI log)
+  and the database has their products, so the loss is in how the report is put together; open.
+- CI gates (`scripts/ci-gates.py`): the build fails on a package that can only be used under
+  GPLv3/LGPLv3/AGPLv3 (allow list with `kbd-keymaps-pine` and its reason), and on a critical CVE
+  (CVSS ≥ 9) that is not in the baseline of the 163 known ones. Tested on the real manifest and
+  report: both pass, and fail when the allow list or one baseline entry is removed.
 - Licenses: the license manifest lists each installed package. The only plain GPLv3 package is
   `kbd-keymaps-pine` (through systemd's `vconsole`); `libgcc`/`libstdc++` have the GCC exception,
   `libidn2`/`libunistring` can be used under GPLv2. The SBOM's recipe licenses show more GPLv3
@@ -1064,8 +1069,8 @@ Next, production level, in this order:
 5. **SBOM, CVEs and licenses**
    - [x] SPDX SBOM (`create-spdx`), `cve-check` report, license manifest, as CI results
    - [x] GPLv3 in the image: what it is, how `INCOMPATIBLE_LICENSE` keeps it out
-   - [ ] CI fails on a new critical CVE or a forbidden license; GPL sources (`archiver`) for
-         releases
+   - [x] CI fails on a new critical CVE (baseline) or a forbidden license (allow list)
+   - [ ] GPL sources (`archiver`) for releases; find why some recipes miss in the CVE report
 6. **OTA from a server** (over Ethernet)
    - [ ] hawkBit server in Docker, `rauc-hawkbit-updater` on the board, device token kept out of
          the image and the repository
