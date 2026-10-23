@@ -82,6 +82,21 @@ jobs:
           name: my-bundle-ci-signed
           path: ${{ env.DEPLOY }}/my-bundle-stm32mp25-disco.raucb
           retention-days: 7
+      # SBOM (SPDX 2.2, written by Yocto's create-spdx) and a table of it
+      - name: SBOM summary
+        run: |
+          scripts=meta-mylayer/scripts
+          $scripts/sbom-summary.py $DEPLOY/my-image-stm32mp25-disco.rootfs.spdx.tar.zst > sbom.csv
+          { echo "### Licenses in the image (recipes)"; echo '```'
+            $scripts/sbom-summary.py --licenses $DEPLOY/my-image-stm32mp25-disco.rootfs.spdx.tar.zst
+            echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: |
+            sbom.csv
+            ${{ env.DEPLOY }}/my-image-stm32mp25-disco.rootfs.spdx.tar.zst
+          retention-days: 14
       - uses: actions/upload-artifact@v4
         with:
           name: my-image-manifest
