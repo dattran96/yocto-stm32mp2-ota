@@ -26,3 +26,10 @@ RAUC_SLOT_bootfs[file] = "my-bootfs-${MACHINE}.ext4"
 
 # The signing key is set in local.conf (RAUC_KEY_FILE / RAUC_CERT_FILE)
 # and is not part of this layer.
+
+# Sign again when the certificate changes. meta-rauc lists the key and
+# certificate as "${RAUC_CERT_FILE}:False", and BitBake skips entries marked
+# ":False" (file does not exist), so a new key would keep the old signature.
+# A new key always comes with a new certificate, so the certificate is enough.
+# (Only when a certificate is set: the parse check in CI has none.)
+do_bundle[file-checksums] += "${@'${RAUC_CERT_FILE}:True' if d.getVar('RAUC_CERT_FILE') else ''}"
