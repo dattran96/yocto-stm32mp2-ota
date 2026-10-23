@@ -946,7 +946,43 @@ Follow-along guide: [docs/20-ci.md](docs/20-ci.md).
 - The first CI build found host contamination: libtiff turns on LERC by itself, so `tiff-native`
   from my PC linked to the PC's `libLerc.so.4`, and that sstate broke OP-TEE's Pillow in the
   container. Fixed with `--disable-lerc` in a tiff bbappend. Second run: success, 38 min, 184 of
-  6180 tasks built again.
+  6180 tasks built again. A push without changes: 1 min 18 s.
+- The RAUC bundle is signed in CI with its own test key (only the runner user can read it, no
+  password), and `rauc info` checks the signature and the compatible string. My board trusts
+  only my development CA, so it refuses CI bundles; a release would be signed again with
+  `rauc resign` on a machine that holds the release key.
+- Two failures on the way: a certificate with `extendedKeyUsage=codeSigning` fails RAUC's S/MIME
+  purpose check; and after the key change the bundle still had the old signature. Cause, in
+  meta-rauc: key and certificate are listed as `file-checksums` with `:False`, and BitBake leaves
+  those out, so a new key did not change the task checksum and `do_bundle` came from sstate. Fixed
+  in `my-bundle.bb` (certificate listed with `:True`); `bitbake-dumpsig` now shows it.
+
+### Step 21: SBOM, CVEs and licenses
+
+Goal: know what the image contains, its known security holes and its licenses, from every build.
+Follow-along guide: [docs/21-sbom-cve-licenses.md](docs/21-sbom-cve-licenses.md).
+
+- SBOM: poky already writes SPDX 2.2 (`create-spdx`), 2590 JSON files for my image.
+  `scripts/sbom-summary.py` turns it into one CSV (recipe, version, license, CPE): about 110 recipes
+  without the build tools, MIT the most common license. CI keeps both.
+- CVE check: `kas/cve.yml` turns on `cve-check`; `scripts/cve-summary.py` prints the open
+  (`Unpatched`) CVEs and the highest scores, also in the CI run summary. The first build downloads
+  NVD's database (~1 GB), slow without an API key: the first run took 1 h 42 min.
+- First result: 2249 open CVEs, 2170 of them in ST's kernel. The kernel gives a CVE to nearly
+  every fix, and the check compares only versions; poky's own kernel has an exclusion list for
+  fixes already in its tree, ST's has none. Next highest: openssl, curl, openssh. The report also
+  misses some recipes the SBOM has (ncurses, sqlite3, python3): to be found out in 21d.
+- Licenses: the license manifest lists each installed package. The only plain GPLv3 package is
+  `kbd-keymaps-pine` (through systemd's `vconsole`); `libgcc`/`libstdc++` have the GCC exception,
+  `libidn2`/`libunistring` can be used under GPLv2. The SBOM's recipe licenses show more GPLv3
+  (gdbm, xz), but those cover build scripts and tests, not what is installed.
+- How a product keeps GPLv3 off the device: `INCOMPATIBLE_LICENSE:pn-my-image`. Banning it for
+  the whole distro fails already when planning the build (dry run): the SDK needs `bash-dev`,
+  the test packages need `make`. Not built, since my board is not given to anyone.
+- What this means in daily work: CVEs come every day for unchanged code (check, then patch,
+  update or `CVE_STATUS` with a reason, then OTA); licenses are checked when code changes (new
+  package, `LIC_FILES_CHKSUM` stopping an upgrade, vendor EULAs via `LICENSE_FLAGS`, the release's
+  compliance package). Written down in the guide.
 
 ### Other things learned along the way
 
@@ -1011,16 +1047,20 @@ Next, production level, in this order:
    - [x] GitHub Actions: lint (`oelint-adv`), parse check (`bitbake -p` with kas-container)
    - [ ] Yocto-compatible layer: limit the bbappends to `mydistro` (`:mydistro` overrides), so the
          layer changes nothing for other distros; then `yocto-check-layer` in CI
-   - [ ] Full build of image, RAUC bundle and SDK on a self-hosted runner (own pushes only,
+   - [x] Full build of image and RAUC bundle on a self-hosted runner (own pushes only,
          never pull requests from forks)
-   - [ ] Signing: development key in CI, release key kept apart (`rauc resign`)
+   - [ ] The SDK in CI, for releases
+   - [x] Signing: CI test key for the bundle, my keys kept out of CI
+   - [ ] Release signing apart from CI (`rauc resign`)
    - [ ] Shared hash-equivalence server (`BB_HASHSERVE_UPSTREAM`) and sstate, so new build
          folders reuse the cache
    - [ ] Automatic checks of the results: `rauc info` (signature, compatible, version), a test
          build of `sdk-example/` with the SDK
 5. **SBOM, CVEs and licenses**
-   - [ ] SPDX SBOM (`create-spdx`), `cve-check` report, license manifest and GPL sources, as CI
-         results
+   - [x] SPDX SBOM (`create-spdx`), `cve-check` report, license manifest, as CI results
+   - [x] GPLv3 in the image: what it is, how `INCOMPATIBLE_LICENSE` keeps it out
+   - [ ] CI fails on a new critical CVE or a forbidden license; GPL sources (`archiver`) for
+         releases
 6. **OTA from a server** (over Ethernet)
    - [ ] hawkBit server in Docker, `rauc-hawkbit-updater` on the board, device token kept out of
          the image and the repository

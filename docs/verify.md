@@ -298,6 +298,20 @@ GH_HOST=github.com gh run list -R dattran96/yocto-stm32mp2-ota -w Build -L 3
   /srv/yocto/downloads`; `completed success` for the last push to `main`.
 - No LERC in `tiff-native` (step 20c fix): in a build folder,
   `ldd tmp/sysroots-components/x86_64/tiff-native/usr/lib/libtiff.so | grep -c -i lerc` prints `0`.
+- CI bundle signed with the CI test key (since step 20e): the run summary of "Check the bundle"
+  shows `Verified inline signature by 'O = yocto-stm32mp2-ota CI, CN = CI test signing'`.
+- Does a key change sign the bundle again? In a build folder: `bitbake -S none my-bundle`, then
+  `bitbake-dumpsig -t my-bundle do_bundle | grep "checksums of files"` lists the `.cert.pem`
+  with its sha256 (not `[]`).
+
+## SBOM, CVEs and licenses (since step 21)
+
+| Question | Command (PC, layer folder) | Expected |
+|---|---|---|
+| What is in the image? | `scripts/sbom-summary.py <image>.rootfs.spdx.tar.zst > sbom.csv` | `recipe,version,license,cpe`, one line per recipe (about 110) |
+| Which licenses? | `scripts/sbom-summary.py --licenses <image>.rootfs.spdx.tar.zst` | counts, `MIT` first |
+| Known security holes? | `scripts/cve-summary.py <image>.rootfs.json` | `Unpatched`, `Patched`, `Ignored` counts, then the open CVEs |
+| GPLv3 packages in the image? | `grep -B3 "GPL-3" tmp/deploy/licenses/*/my-image-*/license.manifest \| grep "PACKAGE NAME"` | only `kbd-keymaps-pine`, plus `libgcc`/`libstdc++` (GCC exception) and the "or" licenses |
 
 ## Logs when a task fails
 
