@@ -18,6 +18,7 @@ IMAGE_INSTALL = " \
     cryptsetup \
     root-ssh-key \
     health-check \
+    wifi-config \
 "
 
 IMAGE_FEATURES += "ssh-server-dropbear"

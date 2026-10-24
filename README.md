@@ -907,7 +907,7 @@ Goal: a release build without development settings. Follow-along guide:
   every boot. It now lives on `/data/dropbear`; a systemd drop-in resets `dropbearkey.service`'s
   conditions (an empty `ConditionPathExists=`) and waits for `/data`.
 - Root's home is `/root` in this setup, not `/home/root`: my first check looked in the wrong place.
-- Board test with SSH is still open: there is no network on the board yet.
+- Board test with SSH: done in step 22 over WiFi (key login, no password).
 
 ### Step 19: Robust updates: health check, watchdog, anti-rollback
 
@@ -993,6 +993,28 @@ Follow-along guide: [docs/21-sbom-cve-licenses.md](docs/21-sbom-cve-licenses.md)
   package, `LIC_FILES_CHKSUM` stopping an upgrade, vendor EULAs via `LICENSE_FLAGS`, the release's
   compliance package). Written down in the guide.
 
+### Step 22: Network: WiFi
+
+Goal: the board joins WiFi at boot and can be reached by SSH, with the credentials only on the
+board. Follow-along guide: [docs/22-wifi.md](docs/22-wifi.md).
+
+- Ethernet (22a) skipped: no cable at hand. WiFi chip: Murata 1YN (Cypress CYW43439) on SDIO.
+  Driver `brcmfmac` is in the kernel; the chip's firmware is a binary from Murata's git repos,
+  packaged by ST (`linux-firmware-addons-bcm43xx`) under the names the driver looks for.
+- `wifi-config` recipe: DHCP for `wlan0` (systemd-networkd), `wpa_supplicant@wlan0` started at
+  boot, its config a link to `/data/wifi/`. A drop-in waits for `/data` and skips the start
+  when the file is missing. The network name and the psk hash are written on the board with
+  `wpa_passphrase`; nothing in the image or the repository.
+- On the board: firmware 7.95.86 loaded, connected, address by DHCP, SSH with the board key and no
+  password (this also closes the open board test of step 18). WiFi and networkd come back after a
+  reboot, slot `good`.
+- The first `rauc install` failed with `data block 2824 is corrupted`: the copy on the USB stick
+  was damaged (different `sha256sum`). Copied again with `sync`, then it worked.
+- The address changed after a reboot: networkd's DHCP ID comes from `/etc/machine-id`, which is
+  a new temporary one at every boot on the read-only rootfs (a `tmpfs` over the empty file).
+  `ClientIdentifier=mac` written, board test with the next build; a machine-id kept on `/data`
+  is still open.
+
 ### Other things learned along the way
 
 - `Ctrl-Z` pauses a command instead of cancelling it. A paused `devtool build` kept
@@ -1073,11 +1095,15 @@ Next, production level, in this order:
    - [x] GPLv3 in the image: what it is, how `INCOMPATIBLE_LICENSE` keeps it out
    - [x] CI fails on a new critical CVE (baseline) or a forbidden license (allow list)
    - [ ] GPL sources (`archiver`) for releases; find why some recipes miss in the CVE report
-6. **OTA from a server** (over Ethernet)
+6. **Network** (WiFi; no Ethernet cable at hand)
+   - [x] WiFi: chip firmware, `wpa_supplicant`, systemd-networkd config, credentials only on `/data`
+   - [x] SSH over WiFi with the board key
+   - [ ] One machine-id kept on `/data` (stable DHCP ID, one journal folder)
+7. **OTA from a server** (over WiFi)
    - [ ] hawkBit server in Docker, `rauc-hawkbit-updater` on the board, device token kept out of
          the image and the repository
    - [ ] RAUC streaming (install directly from HTTPS); optional adaptive updates
-7. **Device tree and a driver** (I2C sensor, e.g. BME280, on the GPIO expansion header)
+8. **Device tree and a driver** (I2C sensor, e.g. BME280, on the GPIO expansion header)
    - [ ] Find the I2C controller and pins in the board schematics
    - [ ] Device tree node for the sensor in a `linux-stm32mp` bbappend; test with the existing
          `bmp280` IIO driver and `i2cdetect`
@@ -1091,8 +1117,6 @@ Later:
 - [ ] Clean-up: remove the old FIT and device trees from `/boot` of the rootfs
       (`kernel-image-fitimage`, `kernel-devicetree`). Since step 16f U-Boot loads the FIT from
       the slot's boot partition, so these ~12 MB per slot are unused
-- [ ] WiFi: chip firmware, `wpa_supplicant`, systemd-networkd config, credentials kept out of the
-      repository
 - [ ] Media player controlled with an IR remote
 - [ ] Optional: Mender on QEMU, compared with RAUC
 - [ ] Fully closed serial console for the release build, together with closing the chip:

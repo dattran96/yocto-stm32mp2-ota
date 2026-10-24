@@ -1,0 +1,11 @@
+# Address for wlan0 by DHCP once wpa_supplicant has joined the network
+[Match]
+Name=wlan0
+
+[Network]
+DHCP=yes
+
+[DHCPv4]
+# The machine-id is new at every boot (empty in the read-only image), so the
+# default ID from it changes; the router then gives a new address each time
+ClientIdentifier=mac

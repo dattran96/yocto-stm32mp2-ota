@@ -352,6 +352,10 @@ PC$ ls tmp/work/*/<recipe>/*/temp/
 | RAUC slot status | `cat /data/rauc/central.raucs` | a `[slot.rootfs.N]` section per installed slot, `bundle.version`, `sha256` of the rootfs image |
 | SSH key only? (since step 18) | `cat /etc/default/dropbear`, `ls -l /root/.ssh` | `DROPBEAR_EXTRA_ARGS="-s"`; `authorized_keys` `-rw-------` |
 | Host key on `/data`? | `ls -l /data/dropbear`, `systemctl status dropbearkey` | `dropbear_rsa_host_key`; the service runs only on the first boot (`condition unmet` later) |
+| WiFi chip and firmware? (since step 22) | `dmesg \| grep brcmf`, `ip link show wlan0` | `Firmware: BCM43439/5 ... version 7.95.86`; `wlan0` `UP` |
+| WiFi connected, address? | `iw dev wlan0 link`, `ip addr show wlan0`, `systemctl is-active wpa_supplicant@wlan0 systemd-networkd` | `Connected to ...`, `inet 192.168.x.y/24 ... dynamic`; `active` twice |
+| Credentials only on `/data`? | `ls -l /etc/wpa_supplicant/ /data/wifi/` | link to `/data/wifi/wpa_supplicant-wlan0.conf`; the file `-rw-------` |
+| Temporary machine-id? | `grep machine-id /proc/mounts` | `tmpfs /etc/machine-id tmpfs ro,...` (new ID at every boot) |
 | Health check passed? (since step 19) | `systemctl status health-check`, `rauc status` | `active (exited)`, `health-check: slot X OK`; slot `good` |
 | App watchdog | `systemctl show sysmon -p WatchdogUSec -p Type` | `WatchdogUSec=30s`, `Type=notify` |
 | Anti-rollback limit | `grep min-bundle /etc/rauc/system.conf` | `min-bundle-version=` the running `VERSION_ID` |
