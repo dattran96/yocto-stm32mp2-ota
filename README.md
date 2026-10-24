@@ -1054,7 +1054,9 @@ Next, production level, in this order:
          board test open)
 4. **CI/CD**
    - [x] GitHub Actions: lint (`oelint-adv`), parse check (`bitbake -p` with kas-container)
-   - [ ] Yocto-compatible layer: limit the bbappends to `mydistro` (`:mydistro` overrides), so the
+   - [ ] Later (20h): pin the GitHub actions to a commit instead of `@v4` (code that runs on
+         my PC)
+   - [ ] Later (20h): Yocto-compatible layer: limit the bbappends to `mydistro` (`:mydistro` overrides), so the
          layer changes nothing for other distros; then `yocto-check-layer` in CI
    - [x] Full build of image and RAUC bundle on a self-hosted runner (own pushes only,
          never pull requests from forks)
@@ -1062,7 +1064,7 @@ Next, production level, in this order:
    - [x] Signing: CI test key for the bundle, my keys kept out of CI
    - [x] Release signing apart from CI: written down (trusted machine, signing server, `rauc resign`)
    - [ ] Optional: compare the root hash of a laptop release build with CI's (reproducible build)
-   - [ ] Shared hash-equivalence server (`BB_HASHSERVE_UPSTREAM`) and sstate, so new build
+   - [ ] Later (20h): shared hash-equivalence server (`BB_HASHSERVE_UPSTREAM`) and sstate, so new build
          folders reuse the cache
    - [ ] Automatic checks of the results: `rauc info` (signature, compatible, version), a test
          build of `sdk-example/` with the SDK
