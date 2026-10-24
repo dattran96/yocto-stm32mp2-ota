@@ -9,6 +9,7 @@ LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda
 SRC_URI = " \
     file://30-wlan0.network \
     file://wpa-data.conf \
+    file://wait-online-any.conf \
 "
 S = "${WORKDIR}"
 
@@ -27,6 +28,9 @@ do_install() {
         ${D}${sysconfdir}/systemd/system/multi-user.target.wants/wpa_supplicant@wlan0.service
     install -d ${D}${sysconfdir}/systemd/system/wpa_supplicant@wlan0.service.d
     install -m 0644 ${WORKDIR}/wpa-data.conf ${D}${sysconfdir}/systemd/system/wpa_supplicant@wlan0.service.d/
+
+    install -d ${D}${sysconfdir}/systemd/system/systemd-networkd-wait-online.service.d
+    install -m 0644 ${WORKDIR}/wait-online-any.conf ${D}${sysconfdir}/systemd/system/systemd-networkd-wait-online.service.d/
 }
 
 FILES:${PN} = "${sysconfdir}"

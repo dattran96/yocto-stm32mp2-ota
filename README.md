@@ -1015,6 +1015,26 @@ board. Follow-along guide: [docs/22-wifi.md](docs/22-wifi.md).
   `ClientIdentifier=mac` written, board test with the next build; a machine-id kept on `/data`
   is still open.
 
+### Step 23: OTA from a server (hawkBit)
+
+Goal: updates from a server over WiFi instead of a USB stick. Follow-along guide:
+[docs/23-hawkbit.md](docs/23-hawkbit.md).
+
+- Server: Eclipse hawkBit 1.1.0 and its web UI in Docker on the PC (`hawkbit/docker-compose.yml`).
+  Port 8080 open for the board, the UI only on the PC, the admin password from the shell.
+- Board: `rauc-hawkbit-updater` from meta-rauc (own user, systemd service). A bbappend replaces
+  the example config with a link to `/data/hawkbit/`; the config with the device token is made on
+  the PC from the token file in `~/yocto-keys/` and copied with `scp`. Polling every 30 s.
+- First OTA from the server: 73 MB in 14 s over WiFi, checksum and signature OK, installed into
+  the other slot, rebooted by itself; hawkBit shows the installed set. The board always asks,
+  the server never connects to it.
+- hawkBit's default database is H2 in RAM: a container restart would lose the target and its
+  token. Now an H2 file in a volume; it needs `MODE=LEGACY` like hawkBit's default, else every
+  insert fails (`Function "IDENTITY" not found`). The target was made again with the same token.
+- After a reboot the updater started 2 minutes late: `systemd-networkd-wait-online` waits for the
+  Ethernet port with no cable. `--any` drop-in written, board test with the next build.
+- `scripts/hawkbit-deploy.sh`: upload, distribution set and assignment in one command.
+
 ### Other things learned along the way
 
 - `Ctrl-Z` pauses a command instead of cancelling it. A paused `devtool build` kept
@@ -1100,8 +1120,10 @@ Next, production level, in this order:
    - [x] SSH over WiFi with the board key
    - [ ] One machine-id kept on `/data` (stable DHCP ID, one journal folder)
 7. **OTA from a server** (over WiFi)
-   - [ ] hawkBit server in Docker, `rauc-hawkbit-updater` on the board, device token kept out of
+   - [x] hawkBit server in Docker, `rauc-hawkbit-updater` on the board, device token kept out of
          the image and the repository
+   - [ ] Report success only after the health check passed (today: before the reboot)
+   - [ ] HTTPS between board and server
    - [ ] RAUC streaming (install directly from HTTPS); optional adaptive updates
 8. **Device tree and a driver** (I2C sensor, e.g. BME280, on the GPIO expansion header)
    - [ ] Find the I2C controller and pins in the board schematics

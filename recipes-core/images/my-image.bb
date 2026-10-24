@@ -19,6 +19,7 @@ IMAGE_INSTALL = " \
     root-ssh-key \
     health-check \
     wifi-config \
+    rauc-hawkbit-updater \
 "
 
 IMAGE_FEATURES += "ssh-server-dropbear"

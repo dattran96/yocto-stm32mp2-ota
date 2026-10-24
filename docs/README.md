@@ -34,6 +34,7 @@ can follow yourself. The learning log says *what I did and what went wrong*; the
 | [20 CI/CD](20-ci.md) | Step 20 | PC, GitHub |
 | [21 SBOM, CVEs and licenses](21-sbom-cve-licenses.md) | Step 21 | PC, CI |
 | [22 Network: WiFi](22-wifi.md) | Step 22 | board |
+| [23 OTA from a server: hawkBit](23-hawkbit.md) | Step 23 | PC, board |
 
 ## Conventions
 

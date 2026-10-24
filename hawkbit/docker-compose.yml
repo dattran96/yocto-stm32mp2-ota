@@ -1,0 +1,36 @@
+# hawkBit update server for the board, on the PC (docs/23-hawkbit.md).
+#   read -rs HAWKBIT_ADMIN_PASS; export HAWKBIT_ADMIN_PASS
+#   docker compose -f hawkbit/docker-compose.yml up -d
+# HTTP only, for the home network.
+services:
+  hawkbit:
+    image: hawkbit/hawkbit-update-server:1.1.0
+    # Port 8080 is open to the network: the board polls it (DDI API)
+    ports:
+      - "8080:8080"
+    environment:
+      # The default user is admin:admin; the password comes from the shell.
+      # The built-in H2 database is in RAM by default: a file in the volume
+      # keeps targets and tokens across restarts. MODE=LEGACY as in hawkBit's
+      # own default (hawkbit-jpa-defaults.properties), else inserts fail.
+      SPRING_APPLICATION_JSON: >-
+        {"hawkbit.security.user.admin.password": "{noop}${HAWKBIT_ADMIN_PASS:?read HAWKBIT_ADMIN_PASS first}",
+         "spring.datasource.url": "jdbc:h2:file:/app/artifactrepo/db/hawkbit;MODE=LEGACY"}
+    # Uploaded bundles and the database; "down -v" deletes them
+    volumes:
+      - hawkbit-data:/app/artifactrepo
+    restart: unless-stopped
+
+  hawkbit-ui:
+    image: hawkbit/hawkbit-ui:1.1.0
+    # Web page only on this PC
+    ports:
+      - "127.0.0.1:8088:8088"
+    environment:
+      SPRING_APPLICATION_JSON: '{"hawkbit.server.mgmtUrl": "http://hawkbit:8080"}'
+    depends_on:
+      - hawkbit
+    restart: unless-stopped
+
+volumes:
+  hawkbit-data:

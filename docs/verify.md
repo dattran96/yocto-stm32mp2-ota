@@ -314,6 +314,13 @@ GH_HOST=github.com gh run list -R dattran96/yocto-stm32mp2-ota -w Build -L 3
 | CI gates pass? (since step 21d) | `scripts/ci-gates.py licenses <license.manifest> --allow .github/license-allow.txt`, `scripts/ci-gates.py cves <report> --baseline .github/cve-baseline.txt` | `License gate: OK`, `CVE gate: ... 0 new` |
 | GPLv3 packages in the image? | `grep -B3 "GPL-3" tmp/deploy/licenses/*/my-image-*/license.manifest \| grep "PACKAGE NAME"` | only `kbd-keymaps-pine`, plus `libgcc`/`libstdc++` (GCC exception) and the "or" licenses |
 
+## hawkBit server (since step 23)
+
+| Question | Command (PC, layer folder) | Expected |
+|---|---|---|
+| Server up, database on disk? | `docker compose -f hawkbit/docker-compose.yml logs hawkbit \| grep -E "Database:\|Tomcat started"` | `jdbc:h2:file:/app/artifactrepo/db/hawkbit;MODE=LEGACY`, `Tomcat started on port 8080` |
+| Board known? | `curl -sf -u "admin:$HAWKBIT_ADMIN_PASS" http://localhost:8080/rest/v1/targets/stm32mp25-disco-1` | `"controllerId":"stm32mp25-disco-1"`, `"updateStatus":"registered"` or `"in_sync"` |
+
 ## Logs when a task fails
 
 ```
@@ -356,6 +363,9 @@ PC$ ls tmp/work/*/<recipe>/*/temp/
 | WiFi connected, address? | `iw dev wlan0 link`, `ip addr show wlan0`, `systemctl is-active wpa_supplicant@wlan0 systemd-networkd` | `Connected to ...`, `inet 192.168.x.y/24 ... dynamic`; `active` twice |
 | Credentials only on `/data`? | `ls -l /etc/wpa_supplicant/ /data/wifi/` | link to `/data/wifi/wpa_supplicant-wlan0.conf`; the file `-rw-------` |
 | Temporary machine-id? | `grep machine-id /proc/mounts` | `tmpfs /etc/machine-id tmpfs ro,...` (new ID at every boot) |
+| hawkBit updater running? (since step 23) | `systemctl status rauc-hawkbit-updater`, `journalctl -u rauc-hawkbit-updater -n 4` | `active (running)`; `Checking for new software...` every 30 s, no `401` |
+| Token only on `/data`? | `ls -l /etc/rauc-hawkbit-updater/ /data/hawkbit/` | link to `/data/hawkbit/config.conf`; the file `-rw-r----- root rauc-hawkbit` |
+| Network "online" after boot? | `systemctl status systemd-networkd-wait-online` | `active (exited)` a few seconds after boot (since the `--any` drop-in) |
 | Health check passed? (since step 19) | `systemctl status health-check`, `rauc status` | `active (exited)`, `health-check: slot X OK`; slot `good` |
 | App watchdog | `systemctl show sysmon -p WatchdogUSec -p Type` | `WatchdogUSec=30s`, `Type=notify` |
 | Anti-rollback limit | `grep min-bundle /etc/rauc/system.conf` | `min-bundle-version=` the running `VERSION_ID` |
