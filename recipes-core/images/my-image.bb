@@ -53,3 +53,11 @@ FLASHLAYOUT_PARTITION_BIN2LOAD:bootfs = "my-bootfs-${MACHINE}.ext4"
 # (image_types_verity); the initramfs expects the tree right after the data.
 FLASHLAYOUT_PARTITION_BIN2LOAD:rootfs = "my-image-${MACHINE}.splitted-rootfs.ext4.verity"
 do_create_flashlayout_config[depends] += "my-bootfs:do_image_complete"
+
+# The SDK is for Linux applications. ST also adds ARM's prebuilt bare-metal
+# compilers (M33, TF-A); their RPMs need host libraries that no SDK package
+# provides (libpython3.8.so ...), so dnf cannot install them.
+TOOLCHAIN_HOST_TASK:remove = " \
+    nativesdk-gcc-arm-none-eabi nativesdk-gcc-arm-none-eabi-staticdev \
+    nativesdk-gcc-aarch64-none-elf nativesdk-gcc-aarch64-none-elf-staticdev \
+"
