@@ -141,8 +141,9 @@ jobs:
       - name: CI gates (licenses, critical CVEs)
         run: |
           rc=0
-          meta-mylayer/scripts/ci-gates.py licenses \
-            work/build/tmp/deploy/licenses/stm32mp25_disco/my-image-stm32mp25-disco.rootfs/license.manifest \
+          # The folder name ends with the build time (IMAGE_NAME), take the newest
+          lic=$(ls -td work/build/tmp/deploy/licenses/stm32mp25_disco/my-image-stm32mp25-disco.rootfs*/ | head -n 1)
+          meta-mylayer/scripts/ci-gates.py licenses ${lic}license.manifest \
             --allow meta-mylayer/.github/license-allow.txt > gates.txt || rc=1
           meta-mylayer/scripts/ci-gates.py cves $DEPLOY/my-image-stm32mp25-disco.rootfs.json \
             --baseline meta-mylayer/.github/cve-baseline.txt >> gates.txt || rc=1
