@@ -2,8 +2,8 @@
 
 **Goal:** package a CMake project as a daemon that starts at boot, for both SysVinit and
 systemd, then switch the image to systemd.
-Learning log: [step 8](../README.md#step-8-a-cmake-project-as-a-boot-service) and
-[8b](../README.md#step-8b-switching-the-image-from-sysvinit-to-systemd).
+Learning log: [step 8](learning-log.md#step-8-a-cmake-project-as-a-boot-service) and
+[8b](learning-log.md#step-8b-switching-the-image-from-sysvinit-to-systemd).
 
 ## Steps (8: the service)
 

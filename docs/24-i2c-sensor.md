@@ -2,7 +2,7 @@
 
 **Goal:** a Bosch BME280 (temperature, pressure, humidity) on the board's 40-pin header, described
 in the device tree and read through Linux's IIO interface; later with my own driver. Learning log:
-[step 24](../README.md#step-24-device-tree-and-an-i2c-sensor-bme280).
+[step 24](learning-log.md#step-24-device-tree-and-an-i2c-sensor-bme280).
 
 | Part | What | Where | Status |
 |---|---|---|---|

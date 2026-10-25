@@ -2,7 +2,7 @@
 
 **Goal:** change the source code of a recipe from poky (`file`) without editing poky, and keep
 the change as a patch in your own layer.
-Learning log: [step 4](../README.md#step-4-patching-an-existing-recipe-with-devtool).
+Learning log: [step 4](learning-log.md#step-4-patching-an-existing-recipe-with-devtool).
 
 ## Steps
 

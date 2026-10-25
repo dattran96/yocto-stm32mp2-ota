@@ -3,7 +3,7 @@
 **Goal:** every boot stage checks the next one. Sign TF-A and the FIP with your own keys, see
 what an open (unfused) chip enforces, and close the gaps in U-Boot: an unverified boot script and
 an unverified environment.
-Learning log: [step 13](../README.md#step-13-secure-boot-chain-in-progress).
+Learning log: [step 13](learning-log.md#step-13-secure-boot-chain-in-progress).
 
 > **No OTP fuses in this guide.** Writing the key hash into the fuses is permanent: with a lost
 > key or a mistake the board never boots again. Nothing here runs `STM32_Programmer_CLI` with

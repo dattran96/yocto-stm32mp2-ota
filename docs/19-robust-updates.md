@@ -2,7 +2,7 @@
 
 **Goal:** a slot is marked good only if the product works, a hung application is noticed, and an
 older bundle cannot be installed. Learning log:
-[step 19](../README.md#step-19-robust-updates-health-check-watchdog-anti-rollback).
+[step 19](learning-log.md#step-19-robust-updates-health-check-watchdog-anti-rollback).
 
 | Part | Question | Status |
 |---|---|---|

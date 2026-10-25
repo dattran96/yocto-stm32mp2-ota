@@ -2,7 +2,7 @@
 
 **Goal:** one command sets up and builds the board image from this repository alone: the same
 layers at the same commits, the same configuration, no hand-written `local.conf`. Learning log:
-[step 17](../README.md#step-17-reproducible-build-with-kas).
+[step 17](learning-log.md#step-17-reproducible-build-with-kas).
 
 Board build. Until now the build depended on things only on my PC:
 ```
@@ -135,7 +135,7 @@ That file is the old FIT with the kernel, which U-Boot no longer uses since step
 
 So the configuration is reproduced exactly; the kernel binary is not bit-identical, because the
 same config was compressed into different bytes. Once the old FIT leaves `/boot` (clean-up item in
-the [plan](../README.md#next-steps)), the rootfs should give the same root hash; the kernel would
+the [plan](roadmap.md)), the rootfs should give the same root hash; the kernel would
 still differ in `bootfs`.
 
 ## Build time

@@ -2,7 +2,7 @@
 
 **Goal:** move the package list out of `local.conf` into an image recipe in your layer, so a
 fresh clone builds the same image.
-Learning log: [step 5](../README.md#step-5-a-custom-image-recipe).
+Learning log: [step 5](learning-log.md#step-5-a-custom-image-recipe).
 
 ## Steps
 

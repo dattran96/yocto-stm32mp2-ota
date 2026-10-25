@@ -2,7 +2,7 @@
 
 **Goal:** pack the kernel and device tree into one FIT image with sha256 hashes, boot it with
 `bootm`, and make the boot script reset on failure so the fallback needs nobody at the board.
-Learning log: [step 12g](../README.md#step-12-ota-updates-with-rauc-in-progress).
+Learning log: [step 12g](learning-log.md#step-12-ota-updates-with-rauc-in-progress).
 
 > Since [guide 13](13-secure-boot.md) the A/B logic is built into U-Boot and `boot.scr` is gone. The steps here show the earlier boot script; its files are in [git history](https://github.com/dattran96/yocto-stm32mp2-ota/blob/1ed09c9/recipes-bsp/ab-bootscript).
 

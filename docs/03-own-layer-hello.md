@@ -1,7 +1,7 @@
 # 03 Own layer and a hello-world recipe
 
 **Goal:** create a layer, write a recipe for a small C program, and understand cross-compiling.
-Learning log: [step 3](../README.md#step-3-my-own-layer-and-a-hello-world-recipe).
+Learning log: [step 3](learning-log.md#step-3-my-own-layer-and-a-hello-world-recipe).
 
 ## Steps
 

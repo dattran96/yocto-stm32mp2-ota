@@ -2,7 +2,7 @@
 
 **Goal:** build an SDK that application developers can use without Yocto, and cross-compile a
 program against a library from the image.
-Learning log: [step 7](../README.md#step-7-building-and-using-an-sdk).
+Learning log: [step 7](learning-log.md#step-7-building-and-using-an-sdk).
 
 ## Steps
 

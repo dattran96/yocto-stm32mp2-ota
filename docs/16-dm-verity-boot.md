@@ -3,7 +3,7 @@
 **Goal:** every block of the rootfs is checked against a root hash while the board runs, and the
 root hash itself is signed. Guide 15 made the rootfs read-only and built the hash tree
 ([15e](15-read-only-rootfs.md#15e-hash-tree-and-root-hash-in-the-build)). This guide brings it
-into the boot. Learning log: [step 16](../README.md#step-16-dm-verity-at-boot).
+into the boot. Learning log: [step 16](learning-log.md#step-16-dm-verity-at-boot).
 
 Board build only (`build-stm32mp`). The parts:
 

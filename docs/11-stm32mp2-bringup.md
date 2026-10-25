@@ -2,7 +2,7 @@
 
 **Goal:** build the same layer, distro and image for real hardware with ST's BSP layer, flash
 it to the SD card and boot it.
-Learning log: [step 11](../README.md#step-11-building-for-real-hardware-stm32mp257f-dk).
+Learning log: [step 11](learning-log.md#step-11-building-for-real-hardware-stm32mp257f-dk).
 
 ## Hardware
 - STM32MP257F-DK board, microSD card (16 GB or more).

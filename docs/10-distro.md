@@ -2,7 +2,7 @@
 
 **Goal:** move distro policy (init manager, distro features, name and version) out of
 `local.conf` into a distro file in the layer.
-Learning log: [step 10](../README.md#step-10-my-own-distro-configuration).
+Learning log: [step 10](learning-log.md#step-10-my-own-distro-configuration).
 
 Three kinds of configuration, three places:
 

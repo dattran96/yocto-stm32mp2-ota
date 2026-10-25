@@ -1,11 +1,13 @@
 # Follow-along guides
 
-These guides repeat each lesson of the [learning log](../README.md#learning-log) as steps you
+These guides repeat each lesson of the [learning log](learning-log.md) as steps you
 can follow yourself. The learning log says *what I did and what went wrong*; the guides say
 *what to type*, and what you should see.
 
 - [verify.md](verify.md): how to check build results and the board, with the expected output.
   Most guides link to it instead of repeating the commands.
+- [roadmap.md](roadmap.md): what is done and what comes next.
+- Back to the [project overview](../README.md).
 
 | Guide | Learning log | Hardware |
 |---|---|---|

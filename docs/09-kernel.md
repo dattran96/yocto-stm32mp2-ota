@@ -2,8 +2,8 @@
 
 **Goal:** change the kernel configuration from your layer, and build your own kernel module
 that loads at boot.
-Learning log: [step 9a](../README.md#step-9a-kernel-configuration-fragments) and
-[9b](../README.md#step-9b-an-out-of-tree-kernel-module).
+Learning log: [step 9a](learning-log.md#step-9a-kernel-configuration-fragments) and
+[9b](learning-log.md#step-9b-an-out-of-tree-kernel-module).
 
 ## Steps (9a: configuration fragment)
 

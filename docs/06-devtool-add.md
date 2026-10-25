@@ -2,7 +2,7 @@
 
 **Goal:** create a recipe for a project from GitHub, change its code, and test it on the
 running target without rebuilding the image.
-Learning log: [step 6](../README.md#step-6-adding-a-third-party-project-with-devtool-add).
+Learning log: [step 6](learning-log.md#step-6-adding-a-third-party-project-with-devtool-add).
 
 ## Steps
 

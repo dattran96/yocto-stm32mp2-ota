@@ -1,7 +1,7 @@
 # 01 First build with poky
 
 **Goal:** build a minimal Linux for an emulated ARM64 machine and boot it in QEMU.
-Learning log: [step 1](../README.md#step-1-first-build-with-poky).
+Learning log: [step 1](learning-log.md#step-1-first-build-with-poky).
 
 ## Prerequisites
 - A Linux PC set up for Yocto (packages from the

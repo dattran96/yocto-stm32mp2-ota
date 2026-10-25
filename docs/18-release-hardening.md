@@ -2,7 +2,7 @@
 
 **Goal:** a release build without development settings: no empty passwords, SSH with a key only,
 a host key that stays the same across boots and updates. Learning log:
-[step 18](../README.md#step-18-development-and-release-builds-hardening-in-progress).
+[step 18](learning-log.md#step-18-development-and-release-builds-hardening-in-progress).
 
 | Part | What | Status |
 |---|---|---|
@@ -104,7 +104,7 @@ only way in (the way back is a full USB flash, which erases `/data`).
 The release image keeps the login prompt on `ttySTM0`, but root is locked (`root:*`) and there is
 no other user, so nobody can log in. Kernel and boot messages stay visible, which helps with
 service. Closing the console completely (no prompt, quiet kernel, locked U-Boot console) belongs
-to closing the device; it is in the [plan](../README.md#next-steps) under "Later".
+to closing the device; it is in the [plan](roadmap.md) under "Later".
 
 ## Errors you may see
 - `debugfs -R "ls -l /home/root/.ssh"` shows nothing: root's home is `/root` here

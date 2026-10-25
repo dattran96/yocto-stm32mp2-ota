@@ -1,7 +1,7 @@
 # 12h Signed FIT image
 
 **Goal:** U-Boot boots only kernels signed with your key.
-Learning log: [step 12h](../README.md#step-12-ota-updates-with-rauc-in-progress).
+Learning log: [step 12h](learning-log.md#step-12-ota-updates-with-rauc-in-progress).
 
 ## Background
 The hashes from 12g sit in the same file as the data, so anyone can build a new FIT with

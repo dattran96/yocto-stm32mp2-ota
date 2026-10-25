@@ -3,7 +3,7 @@
 **Goal:** two root filesystem slots (A and B). The board runs from one slot while RAUC writes a
 signed update into the other; U-Boot boots the new slot and falls back to the old one if the
 new system does not come up.
-Learning log: [step 12a–12e](../README.md#step-12-ota-updates-with-rauc-in-progress).
+Learning log: [step 12a–12e](learning-log.md#step-12-ota-updates-with-rauc-in-progress).
 
 Board build only (`build-stm32mp`). Every partition change needs a full flash
 (guide 11, step 7). After that, updates go over RAUC.

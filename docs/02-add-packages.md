@@ -1,7 +1,7 @@
 # 02 Adding packages to an image
 
 **Goal:** add packages to an image and see how BitBake reuses earlier work.
-Learning log: [step 2](../README.md#step-2-adding-packages-to-an-image).
+Learning log: [step 2](learning-log.md#step-2-adding-packages-to-an-image).
 
 ## Steps
 

@@ -3,7 +3,7 @@
 **Goal:** the root filesystem is never written on the board, from the first moment of boot.
 dm-verity (next part) checks every block of the slot against a hash, which only works if the
 slot stays exactly as it was built.
-Learning log: [step 15](../README.md#step-15-read-only-rootfs-and-dm-verity-in-progress).
+Learning log: [step 15](learning-log.md#step-15-read-only-rootfs-and-dm-verity-in-progress).
 
 Board build only (`build-stm32mp`). Needs `/data` from [guide 14](14-data-partition.md).
 

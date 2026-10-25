@@ -3,7 +3,7 @@
 **Goal:** the board joins a WiFi network at boot, gets an address by DHCP and can be reached by
 SSH. The network name and password are not in the image and not in this repository: they are
 written once on the board, to `/data`. Learning log:
-[step 22](../README.md#step-22-network-wifi).
+[step 22](learning-log.md#step-22-network-wifi).
 
 | Part | What | Where | Status |
 |---|---|---|---|

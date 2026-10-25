@@ -4,7 +4,7 @@
 Eclipse hawkBit on the PC (Docker); on the board `rauc-hawkbit-updater` asks the server for new
 software, downloads the RAUC bundle, installs it and reboots. The device token is not in the image
 and not in this repository. Learning log:
-[step 23](../README.md#step-23-ota-from-a-server-hawkbit).
+[step 23](learning-log.md#step-23-ota-from-a-server-hawkbit).
 
 | Part | What | Where | Status |
 |---|---|---|---|

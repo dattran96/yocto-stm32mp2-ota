@@ -3,7 +3,7 @@
 **Goal:** a partition that RAUC updates never touch, mounted at `/data`, with RAUC's own slot
 status on it. Without it, every update and every rollback loses everything written at runtime,
 because RAUC writes the whole rootfs slot.
-Learning log: [step 14](../README.md#step-14-persistent-data-partition).
+Learning log: [step 14](learning-log.md#step-14-persistent-data-partition).
 
 Board build only (`build-stm32mp`). No full flash: ST's flash layout already has the partition,
 so everything is delivered as RAUC bundles.

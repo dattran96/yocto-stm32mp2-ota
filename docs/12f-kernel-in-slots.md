@@ -2,7 +2,7 @@
 
 **Goal:** move the kernel and device tree from the shared `bootfs` partition into each rootfs
 slot, so a RAUC update can change the kernel, and a rollback restores the old kernel too.
-Learning log: [step 12f](../README.md#step-12-ota-updates-with-rauc-in-progress).
+Learning log: [step 12f](learning-log.md#step-12-ota-updates-with-rauc-in-progress).
 
 > Since [guide 13](13-secure-boot.md) the A/B logic is built into U-Boot and `boot.scr` is gone. The steps here show the earlier boot script; its files are in [git history](https://github.com/dattran96/yocto-stm32mp2-ota/blob/1ed09c9/recipes-bsp/ab-bootscript).
 
