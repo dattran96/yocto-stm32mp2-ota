@@ -15,3 +15,9 @@ KERNEL_CONFIG_FRAGMENTS:append = " ${WORKDIR}/localversion.cfg"
 # hash inside), signed together with kernel and DTB. Deployed as
 # kernel/fitImage-my-initramfs-*; the FIT in /boot stays without it.
 INITRAMFS_IMAGE = "my-initramfs"
+
+# BME280 on the GPIO expansion connector (docs/24-i2c-sensor.md): i2c8 on,
+# the sensor node in the board's device tree, and Linux's bmp280 driver
+SRC_URI += "file://0001-arm64-dts-st-stm32mp257f-dk-BME280-on-i2c8.patch"
+SRC_URI += "file://bmp280.cfg"
+KERNEL_CONFIG_FRAGMENTS:append = " ${WORKDIR}/bmp280.cfg"

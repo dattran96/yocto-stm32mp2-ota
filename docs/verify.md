@@ -366,6 +366,9 @@ PC$ ls tmp/work/*/<recipe>/*/temp/
 | hawkBit updater running? (since step 23) | `systemctl status rauc-hawkbit-updater`, `journalctl -u rauc-hawkbit-updater -n 4` | `active (running)`; `Checking for new software...` every 30 s, no `401` |
 | Token only on `/data`? | `ls -l /etc/rauc-hawkbit-updater/ /data/hawkbit/` | link to `/data/hawkbit/config.conf`; the file `-rw-r----- root rauc-hawkbit` |
 | Network "online" after boot? | `systemctl status systemd-networkd-wait-online` | `active (exited)` a few seconds after boot (since the `--any` drop-in) |
+| I2C buses? (since step 24) | `i2cdetect -l` | `i2c-1 ... STM32F7 I2C(0x0000000046040000)` (I2C8, the header) |
+| Sensor found, driver bound? | `dmesg \| grep bmp280`, `i2cdetect -y 1` | `0x60 is a known chip id for bme280`; `UU` at `0x76` |
+| Sensor values | `cat /sys/bus/iio/devices/iio:device0/{name,in_temp_input,in_pressure_input,in_humidityrelative_input}` | `bme280`, milli-°C, kPa, milli-% |
 | Health check passed? (since step 19) | `systemctl status health-check`, `rauc status` | `active (exited)`, `health-check: slot X OK`; slot `good` |
 | App watchdog | `systemctl show sysmon -p WatchdogUSec -p Type` | `WatchdogUSec=30s`, `Type=notify` |
 | Anti-rollback limit | `grep min-bundle /etc/rauc/system.conf` | `min-bundle-version=` the running `VERSION_ID` |

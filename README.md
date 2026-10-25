@@ -1032,8 +1032,27 @@ Goal: updates from a server over WiFi instead of a USB stick. Follow-along guide
   token. Now an H2 file in a volume; it needs `MODE=LEGACY` like hawkBit's default, else every
   insert fails (`Function "IDENTITY" not found`). The target was made again with the same token.
 - After a reboot the updater started 2 minutes late: `systemd-networkd-wait-online` waits for the
-  Ethernet port with no cable. `--any` drop-in written, board test with the next build.
+  Ethernet port with no cable. `--any` drop-in: tested with 1.14, online right after boot.
 - `scripts/hawkbit-deploy.sh`: upload, distribution set and assignment in one command.
+
+### Step 24: Device tree and an I2C sensor (BME280)
+
+Goal: an I2C sensor on the 40-pin header, from the schematic to the values in Linux. Follow-along
+guide: [docs/24-i2c-sensor.md](docs/24-i2c-sensor.md).
+
+- Bus and pins traced through all layers: UM3385 table 24 (pins 3/5 = PZ3/PZ4 = I2C8), OP-TEE's
+  RIF table (I2C8 and PZ3/PZ4 non-secure), pinctrl (`i2c8_pins_a`, open-drain, no internal
+  pull-up), board `.dts` (`&i2c8` prepared at 100 kHz but `disabled`).
+- Wired a 6-pin BME280 board: 3.3 V, GND, SDA, SCL, ADDR to GND (address `0x76`), CS to 3.3 V
+  (I2C mode).
+- A kernel patch to ST's `stm32mp257f-dk.dts` turns `i2c8` on and adds `pressure@76` with
+  `compatible = "bosch,bme280"`; `bmp280.cfg` builds Linux's own `bmp280` IIO driver (ST's config
+  only has the drivers for its board's chips); `i2c-tools` in the image. Checked the compiled
+  `.dtb` with `dtc` before installing.
+- First update that needed no USB stick: `scripts/hawkbit-deploy.sh`, board installed 1.14 by
+  itself. The `--any` wait-online drop-in works (online right after boot).
+- On the board: `I2C-1` at `0x46040000`, `bmp280 1-0076: 0x60 is a known chip id for bme280`,
+  `UU` at `0x76` in `i2cdetect`, 18.79 °C, 952.4 hPa, 69.5 % in `/sys/bus/iio/devices/iio:device0`.
 
 ### Other things learned along the way
 
@@ -1126,8 +1145,8 @@ Next, production level, in this order:
    - [ ] HTTPS between board and server
    - [ ] RAUC streaming (install directly from HTTPS); optional adaptive updates
 8. **Device tree and a driver** (I2C sensor, e.g. BME280, on the GPIO expansion header)
-   - [ ] Find the I2C controller and pins in the board schematics
-   - [ ] Device tree node for the sensor in a `linux-stm32mp` bbappend; test with the existing
+   - [x] Find the I2C controller and pins in the board schematics
+   - [x] Device tree node for the sensor in a `linux-stm32mp` bbappend; test with the existing
          `bmp280` IIO driver and `i2cdetect`
    - [ ] Own I2C driver (`probe()`, `regmap`, sysfs/IIO interface) as an out-of-tree module
    - [ ] Debug the bus with a logic analyzer (wrong address, missing pull-ups)

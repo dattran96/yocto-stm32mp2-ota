@@ -35,6 +35,7 @@ can follow yourself. The learning log says *what I did and what went wrong*; the
 | [21 SBOM, CVEs and licenses](21-sbom-cve-licenses.md) | Step 21 | PC, CI |
 | [22 Network: WiFi](22-wifi.md) | Step 22 | board |
 | [23 OTA from a server: hawkBit](23-hawkbit.md) | Step 23 | PC, board |
+| [24 Device tree and an I2C sensor](24-i2c-sensor.md) | Step 24 | layer, board |
 
 ## Conventions
 

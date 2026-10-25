@@ -20,6 +20,7 @@ IMAGE_INSTALL = " \
     health-check \
     wifi-config \
     rauc-hawkbit-updater \
+    i2c-tools \
 "
 
 IMAGE_FEATURES += "ssh-server-dropbear"

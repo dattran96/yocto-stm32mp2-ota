@@ -227,8 +227,8 @@ Active: activating (start) since Sat 2026-10-24 18:48:23 UTC; 1min 29s ago
 ```
 The updater waits for `network-online.target`. `systemd-networkd-wait-online` waits for every
 interface, also the Ethernet port with no cable, and gives up only after 2 minutes. Fix in
-`wifi-config`: a drop-in with `--any` (one interface is enough). Written, board test with the
-next build.
+`wifi-config`: a drop-in with `--any` (one interface is enough). Tested with 1.14:
+`Active: active (exited)` right after boot.
 
 ## Errors you may see
 

@@ -1,0 +1,29 @@
+From: Dat Tran <t.ng.t.dat@gmail.com>
+Subject: [PATCH] arm64: dts: st: stm32mp257f-dk: BME280 on i2c8
+
+ST keeps i2c8 disabled: it is only wired to the GPIO expansion connector
+(PZ3 SDA pin 3, PZ4 SCL pin 5). Turn it on and add a Bosch BME280 at
+0x76 (its SDO pin tied to GND), handled by the bmp280 IIO driver.
+
+Upstream-Status: Inappropriate [board-specific hardware on the expansion connector]
+---
+--- a/arch/arm64/boot/dts/st/stm32mp257f-dk.dts
++++ b/arch/arm64/boot/dts/st/stm32mp257f-dk.dts
+@@ -487,10 +487,16 @@
+ 	i2c-scl-rising-time-ns = <185>;
+ 	i2c-scl-falling-time-ns = <20>;
+ 	clock-frequency = <100000>;
+-	status = "disabled";
++	status = "okay";
+ 	/* spare dmas for other usage */
+ 	/delete-property/dmas;
+ 	/delete-property/dma-names;
++
++	/* BME280 on the GPIO expansion connector: SDA pin 3, SCL pin 5, SDO to GND */
++	pressure@76 {
++		compatible = "bosch,bme280";
++		reg = <0x76>;
++	};
+ };
+ 
+ &i2s2 {
